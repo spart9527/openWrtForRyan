@@ -31,26 +31,42 @@ install-private-packages
 
 定时：每周一 00:00（北京时间）自动编一次。
 
-## 刷机
+## 固件更新顺序
 
-备份：
+只刷 **Actions 成功** 后 Releases 里的 `*-ext4-combined-efi.img.gz`。正在跑或已取消的编译不要用。
 
-```sh
-sysupgrade -b /tmp/backup.tar.gz
-```
+1. **确认清单还在路由上**  
+   第一次升级前把私有包名放到 `/root/private-packages.txt`。之后 `/root/` 会随配置保留。
 
-LuCI：**系统 → 备份/升级**，上传 `*-ext4-combined-efi.img.gz`，勾选保留配置。
+2. **备份**（拷到电脑）
 
-或把 [`scripts/router-upgrade.sh`](scripts/router-upgrade.sh) 拷到路由上：
+   ```sh
+   sysupgrade -b /tmp/backup.tar.gz
+   ```
 
-```sh
-REPO=spart9527/openWrtForRyan sh router-upgrade.sh --check
-REPO=spart9527/openWrtForRyan sh router-upgrade.sh
-```
+3. **刷入并保留配置**  
+   LuCI：**系统 → 备份/升级**，上传镜像，勾选保留配置。  
+   或：
 
-跨内核升级前先备份。网络异常就无配置刷入，再只恢复 `network` / `firewall` / `dhcp` / `dropbear`。
+   ```sh
+   REPO=spart9527/openWrtForRyan sh router-upgrade.sh --check
+   REPO=spart9527/openWrtForRyan sh router-upgrade.sh
+   ```
 
-不要对现机执行 `opkg upgrade` 去升 `kmod-*`。
+   重启后 SSH 端口、LAN、防火墙、OpenVPN 服务和证书都还在（OpenVPN 已编进公开镜像）。
+
+4. **再装未编进镜像的插件**
+
+   ```sh
+   install-private-packages
+   ```
+
+5. **检查**  
+   私有插件能打开；OpenVPN 客户端能连；防火墙规则没有明显重复。
+
+不要在现机上对 `kmod-*` 做 `opkg upgrade`。内核只通过刷整包固件更新。
+
+网络起不来时：无配置再刷一次，只手工恢复 `network` / `firewall` / `dhcp` / `dropbear`，然后执行第 4 步，需要的话从备份里取出 OpenVPN 证书。
 
 ## 本地试配置（可选）
 
