@@ -1,0 +1,16 @@
+#!/bin/sh
+# 首次启动写入现机习惯。保留配置的 sysupgrade 不会再跑已执行过的脚本。
+
+uci -q batch <<-EOF
+	set system.@system[0].hostname='Ryan-OpenWrt'
+	set system.@system[0].zonename='Asia/Shanghai'
+	set system.@system[0].timezone='CST-8'
+	set network.lan.ipaddr='192.168.1.1'
+	set network.lan.netmask='255.255.255.0'
+	set dropbear.@dropbear[0].Interface='lan'
+	commit system
+	commit network
+	commit dropbear
+EOF
+
+exit 0

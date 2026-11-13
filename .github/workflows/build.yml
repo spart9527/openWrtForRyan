@@ -1,0 +1,136 @@
+name: Build x86_64 firmware
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每周一 00:00 CST
+    - cron: "0 16 * * 0"
+  push:
+    branches: [main, master]
+    paths:
+      - "packages.txt"
+      - "extra.config"
+      - "files/**"
+      - "scripts/**"
+      - ".github/workflows/build.yml"
+
+concurrency:
+  group: build-x86_64
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      TZ: Asia/Shanghai
+      TARGET: x86_64
+
+    steps:
+      - name: Checkout overlay
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install build deps
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+            python3-setuptools rsync swig unzip zlib1g-dev file wget dwarves \
+            llvm python3-pyelftools libpython3-dev aria2 jq qemu-utils ccache \
+            libelf-dev device-tree-compiler libgmp3-dev libmpc-dev libfuse-dev rename
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Prepare OpenWrt tree
+        run: |
+          chmod +x scripts/prepare.sh
+          ./scripts/prepare.sh
+
+      - name: Move build dirs to extra disk
+        run: |
+          sudo mkdir -p -m 777 /mnt/openwrt/build_dir
+          rm -rf openwrt/build_dir
+          ln -s /mnt/openwrt/build_dir openwrt/build_dir
+
+      - name: Cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/staging_dir/host
+            openwrt/staging_dir/hostpkg
+            openwrt/staging_dir/toolchain-*
+            openwrt/build_dir/host
+            openwrt/build_dir/hostpkg
+          key: x86_64-toolchain-${{ hashFiles('packages.txt', 'extra.config') }}
+          restore-keys: |
+            x86_64-toolchain-
+
+      - name: Compile
+        id: compile
+        run: |
+          df -hT
+          cd openwrt
+          make -j$(($(nproc)+1)) || {
+            log=$(mktemp)
+            make -j1 V=s >"$log" 2>&1 || true
+            tail -n 80 "$log"
+            exit 1
+          }
+          df -hT
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          shopt -s nullglob
+          cp openwrt/bin/targets/x86/64/*ext4-combined-efi.img.gz out/ || true
+          cp openwrt/bin/targets/x86/64/sha256sums out/ || true
+          cp openwrt/.config out/config.build || true
+          ls -lh out
+          test -n "$(ls -A out/*ext4-combined-efi.img.gz 2>/dev/null)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryan-openwrt-x86_64
+          path: out/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stamp version
+        run: echo "STAMP=$(TZ=Asia/Shanghai date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.STAMP }}-x86_64
+          name: Ryan-OpenWrt ${{ env.STAMP }} x86_64
+          files: out/*
+          body: |
+            基于 kiddin9/Kwrt `25.12` + OpenWrt `openwrt-25.12`。
+            刷机文件：`*-ext4-combined-efi.img.gz`（EFI + ext4）。
+
+            - LAN: `192.168.1.1`
+            - SSH: 仅 LAN
+            - 包清单：`packages.txt`
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

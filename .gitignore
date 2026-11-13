@@ -1,0 +1,12 @@
+openwrt/
+kwrt/
+*.img
+*.img.gz
+*.vmdk
+*.vdi
+*.vhdx
+*.iso
+*.bin
+*.log
+.DS_Store
+Thumbs.db
