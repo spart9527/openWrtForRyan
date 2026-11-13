@@ -1,24 +1,11 @@
-# Ryan-OpenWrt 顶层包清单
-# 只写业务包。依赖（lib*、大部分 kmod、passwall 组件）由编译系统解析。
-# 改完后推送到 GitHub，Actions 会编进下一版镜像。
+# Ryan-OpenWrt 顶层包清单（会编进公开镜像）
+# 只写顶层包。不想公开的包放到路由 /root/private-packages.txt，不要写在这里。
 
-# --- 科学上网 / DNS ---
-luci-app-passwall
+# --- 网络加速 / 工具 ---
 luci-app-turboacc
-smartdns
-chinadns-ng
-haproxy
-sing-box
-shadowsocks-rust-sslocal
-shadowsocksr-libev-ssr-local
-shadowsocksr-libev-ssr-redir
-simple-obfs-client
-v2ray-plugin
-geoview
-dns2socks
-ipt2socks
-microsocks
-tcping
+ip-full
+ethtool
+snmpd-ssl
 
 # --- 广告 / 媒体 ---
 luci-app-adbyby-plus
@@ -36,14 +23,6 @@ luci-app-arpbind
 luci-app-timewol
 etherwake
 luci-app-wrtbwmon
-luci-app-openvpn-server-client
-openvpn-openssl
-openvpn-easy-rsa
-luci-proto-wireguard
-wireguard-tools
-ip-full
-ethtool
-snmpd-ssl
 
 # --- 存储 / 磁盘 ---
 luci-app-diskman

@@ -12,9 +12,15 @@
 
 ## 改插件
 
-编辑 [`packages.txt`](packages.txt)，只写顶层包（`luci-app-*` 等）。推到 `main` 或在 Actions 里 **Run workflow**。
+公开镜像里的包写在 [`packages.txt`](packages.txt)。推到 `main` 或在 Actions 里 **Run workflow**。
 
-内核和 Kwrt 的 x86 网卡驱动跟上游走，不必手写 `kmod-r8168` 这类包。
+不想出现在 GitHub / Release 里的包，写到路由上的 `/root/private-packages.txt`（一行一个包名），刷机后执行：
+
+```sh
+install-private-packages
+```
+
+`/root/` 已加入升级保留列表。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
 
 ## GitHub 上编译
 

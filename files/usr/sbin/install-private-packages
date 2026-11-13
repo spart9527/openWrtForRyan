@@ -1,0 +1,24 @@
+#!/bin/sh
+# 读取路由本地清单并安装。清单不要放进 GitHub。
+set -e
+
+LIST="${PRIVATE_PACKAGES:-/root/private-packages.txt}"
+
+if [ ! -f "$LIST" ]; then
+	echo "missing $LIST"
+	exit 1
+fi
+
+pkgs="$(grep -vE '^[[:space:]]*(#|$)' "$LIST" | tr '\n' ' ')"
+if [ -z "$pkgs" ]; then
+	echo "empty package list"
+	exit 0
+fi
+
+if command -v apk >/dev/null 2>&1; then
+	apk update
+	apk add $pkgs
+else
+	opkg update
+	opkg install $pkgs
+fi
