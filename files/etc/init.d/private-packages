@@ -1,0 +1,57 @@
+#!/bin/sh /etc/rc.common
+# 新固件启动后，若 /root/private-packages.txt 存在且尚未装过当前版本，则自动安装。
+
+START=99
+
+LIST=/root/private-packages.txt
+STAMP=/root/.private-packages.done
+LOG=/tmp/private-packages.log
+
+firmware_id() {
+	DISTRIB_RELEASE=
+	DISTRIB_REVISION=
+	. /etc/openwrt_release
+	echo "${DISTRIB_RELEASE}-${DISTRIB_REVISION}"
+}
+
+wait_net() {
+	n=0
+	while [ "$n" -lt 24 ]; do
+		ping -c 1 -W 2 223.5.5.5 >/dev/null 2>&1 && return 0
+		n=$((n + 1))
+		sleep 5
+	done
+	return 1
+}
+
+run_install() {
+	[ -f "$LIST" ] || return 0
+	[ -x /usr/sbin/install-private-packages ] || return 0
+
+	rel="$(firmware_id)"
+	[ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$rel" ] && return 0
+
+	logger -t private-packages "waiting for network"
+	if ! wait_net; then
+		logger -t private-packages "network timeout, will retry next boot"
+		return 1
+	fi
+
+	logger -t private-packages "installing packages for $rel"
+	if /usr/sbin/install-private-packages >"$LOG" 2>&1; then
+		echo "$rel" >"$STAMP"
+		logger -t private-packages "done"
+		return 0
+	fi
+
+	logger -t private-packages "failed, see $LOG"
+	return 1
+}
+
+boot() {
+	run_install &
+}
+
+start() {
+	run_install
+}

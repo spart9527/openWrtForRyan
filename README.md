@@ -14,11 +14,7 @@
 
 公开镜像里的包写在 [`packages.txt`](packages.txt)。推到 `main` 或在 Actions 里 **Run workflow**。
 
-不想出现在 GitHub / Release 里的包，写到路由上的 `/root/private-packages.txt`（一行一个包名），刷机后执行：
-
-```sh
-install-private-packages
-```
+不想出现在 GitHub / Release 里的包，写到路由上的 `/root/private-packages.txt`（一行一个包名）。新固件开机联网后会自动安装，一般不用手跑 `install-private-packages`。
 
 `/root/` 已加入升级保留列表。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
 
@@ -35,38 +31,29 @@ install-private-packages
 
 只刷 **Actions 成功** 后 Releases 里的 `*-ext4-combined-efi.img.gz`。正在跑或已取消的编译不要用。
 
-1. **确认清单还在路由上**  
-   第一次升级前把私有包名放到 `/root/private-packages.txt`。之后 `/root/` 会随配置保留。
+第一次升级前把私有包名放到 `/root/private-packages.txt`（已做过可跳过）。
 
-2. **备份**（拷到电脑）
+**之后每次一键（新固件里）：**
 
-   ```sh
-   sysupgrade -b /tmp/backup.tar.gz
-   ```
+```sh
+firmware-upgrade --check
+firmware-upgrade
+```
 
-3. **刷入并保留配置**  
-   LuCI：**系统 → 备份/升级**，上传镜像，勾选保留配置。  
-   或：
+会备份到 `/root/backup-latest.tar.gz`，下载并保留配置刷入，设备重启。开机联网后自动安装私有清单，OpenVPN 已在镜像里。
 
-   ```sh
-   REPO=spart9527/openWrtForRyan sh router-upgrade.sh --check
-   REPO=spart9527/openWrtForRyan sh router-upgrade.sh
-   ```
+第一版还没有 `firmware-upgrade` 时，用 LuCI 上传镜像并勾选保留配置，或把仓库里的 `scripts/router-upgrade.sh` 拷到路由再执行。重启后同样会自动装私有包。
 
-   重启后 SSH 端口、LAN、防火墙、OpenVPN 服务和证书都还在（OpenVPN 已编进公开镜像）。
+手动补装（自动失败时）：
 
-4. **再装未编进镜像的插件**
-
-   ```sh
-   install-private-packages
-   ```
-
-5. **检查**  
-   私有插件能打开；OpenVPN 客户端能连；防火墙规则没有明显重复。
+```sh
+logread -e private-packages
+install-private-packages
+```
 
 不要在现机上对 `kmod-*` 做 `opkg upgrade`。内核只通过刷整包固件更新。
 
-网络起不来时：无配置再刷一次，只手工恢复 `network` / `firewall` / `dhcp` / `dropbear`，然后执行第 4 步，需要的话从备份里取出 OpenVPN 证书。
+网络起不来时：无配置再刷一次，只手工恢复 `network` / `firewall` / `dhcp` / `dropbear`，然后 `install-private-packages`，需要的话从备份取出 OpenVPN 证书。
 
 ## 本地试配置（可选）
 
