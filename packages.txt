@@ -23,6 +23,9 @@ luci-app-arpbind
 luci-app-timewol
 etherwake
 luci-app-wrtbwmon
+luci-app-openvpn-server-client
+openvpn-openssl
+openvpn-easy-rsa
 
 # --- 存储 / 磁盘 ---
 luci-app-diskman
