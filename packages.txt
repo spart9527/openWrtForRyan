@@ -5,7 +5,7 @@
 luci-app-turboacc
 ip-full
 ethtool
-snmpd-ssl
+snmpd
 
 # --- 广告 / 媒体 ---
 luci-app-adbyby-plus
