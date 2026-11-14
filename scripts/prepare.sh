@@ -147,9 +147,9 @@ require_config 'CONFIG_TARGET_BOARD="x86"'
 require_config 'CONFIG_TARGET_SUBTARGET="64"'
 require_config 'CONFIG_TARGET_PROFILE="DEVICE_generic"'
 require_config 'CONFIG_PACKAGE_snmpd-nossl=y'
-if grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*ssl=[ym]' .config; then
-  echo "ERROR: a kiddin9/official snmp *-ssl package is still enabled" >&2
-  grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*ssl=' .config >&2 || true
+if grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*-ssl=[ym]' .config; then
+  echo "ERROR: a snmp *-ssl package is still enabled" >&2
+  grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*-ssl=' .config >&2 || true
   exit 1
 fi
 if [ -d feeds/kiddin9/net-snmp-ssl ] || [ -d package/feeds/kiddin9/net-snmp-ssl ]; then
