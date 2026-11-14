@@ -58,6 +58,13 @@ export REPO_TOKEN="${REPO_TOKEN:-}"
 export TARGET="${TARGET:-x86_64}"
 /bin/bash devices/common/diy.sh
 
+# kiddin9 的 net-snmp-ssl 是 5.9.1 且无 GCC 14 补丁。feeds -f 会盖掉官方
+# snmpd-ssl / libnetsnmp-ssl。源码包里任意一个 *-ssl 被选中都会整包编译失败。
+echo "==> drop kiddin9 net-snmp-ssl, restore official net-snmp"
+rm -rf feeds/kiddin9/net-snmp-ssl feeds/kiddin9/luci-app-snmpd-ssl
+rm -rf package/feeds/kiddin9/net-snmp-ssl package/feeds/kiddin9/luci-app-snmpd-ssl
+./scripts/feeds install net-snmp
+
 echo "==> merge .config"
 cp -f devices/common/.config .config
 echo >> .config
@@ -140,8 +147,13 @@ require_config 'CONFIG_TARGET_BOARD="x86"'
 require_config 'CONFIG_TARGET_SUBTARGET="64"'
 require_config 'CONFIG_TARGET_PROFILE="DEVICE_generic"'
 require_config 'CONFIG_PACKAGE_snmpd-nossl=y'
-if grep -qE '^CONFIG_PACKAGE_(snmpd-ssl|libnetsnmp-ssl|luci-app-snmpd-ssl)=y' .config; then
-  echo "ERROR: snmpd-ssl still enabled" >&2
+if grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*ssl=[ym]' .config; then
+  echo "ERROR: a kiddin9/official snmp *-ssl package is still enabled" >&2
+  grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*ssl=' .config >&2 || true
+  exit 1
+fi
+if [ -d feeds/kiddin9/net-snmp-ssl ] || [ -d package/feeds/kiddin9/net-snmp-ssl ]; then
+  echo "ERROR: kiddin9 net-snmp-ssl still present" >&2
   exit 1
 fi
 
