@@ -124,12 +124,22 @@ apply_home_config
 make defconfig
 
 echo "==> verify target x86_64"
-grep -E '^CONFIG_(TARGET_x86|TARGET_x86_64|TARGET_BOARD|TARGET_SUBTARGET|TARGET_PROFILE|ARCH)=' .config || true
-grep -qx 'CONFIG_TARGET_x86=y' .config
-grep -qx 'CONFIG_TARGET_x86_64=y' .config
-grep -qx 'CONFIG_TARGET_x86_64_DEVICE_generic=y' .config
-grep -qx 'CONFIG_ARCH="x86_64"' .config
-grep -qx 'CONFIG_PACKAGE_snmpd=y' .config
+grep -E '^CONFIG_(TARGET_x86|TARGET_x86_64|TARGET_BOARD|TARGET_SUBTARGET|TARGET_PROFILE|ARCH|PACKAGE_snmpd)' .config || true
+require_config() {
+  local key="$1"
+  if ! grep -qx "$key" .config; then
+    echo "ERROR: missing $key in .config" >&2
+    grep -E "$(printf '%s' "$key" | sed 's/=.*//')" .config >&2 || true
+    exit 1
+  fi
+}
+require_config 'CONFIG_TARGET_x86=y'
+require_config 'CONFIG_TARGET_x86_64=y'
+require_config 'CONFIG_ARCH="x86_64"'
+require_config 'CONFIG_TARGET_BOARD="x86"'
+require_config 'CONFIG_TARGET_SUBTARGET="64"'
+require_config 'CONFIG_TARGET_PROFILE="DEVICE_generic"'
+require_config 'CONFIG_PACKAGE_snmpd-nossl=y'
 if grep -qE '^CONFIG_PACKAGE_(snmpd-ssl|libnetsnmp-ssl|luci-app-snmpd-ssl)=y' .config; then
   echo "ERROR: snmpd-ssl still enabled" >&2
   exit 1
