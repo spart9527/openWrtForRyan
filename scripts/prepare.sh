@@ -148,6 +148,14 @@ require_config 'CONFIG_TARGET_BOARD="x86"'
 require_config 'CONFIG_TARGET_SUBTARGET="64"'
 require_config 'CONFIG_TARGET_PROFILE="DEVICE_generic"'
 require_config 'CONFIG_TARGET_KERNEL_PARTSIZE=16'
+# 加速：不应再编译整个软件源
+for k in ALL_NONSHARED ALL_KMODS ALL IB; do
+  if grep -qx "CONFIG_${k}=y" .config; then
+    echo "ERROR: CONFIG_${k}=y still enabled (slow build)" >&2
+    exit 1
+  fi
+done
+echo "==> packages: $(grep -c '^CONFIG_PACKAGE_.*=y' .config) built-in, $(grep -c '^CONFIG_PACKAGE_.*=m' .config) modules"
 require_config 'CONFIG_TARGET_ROOTFS_PARTSIZE=1004'
 require_config 'CONFIG_PACKAGE_snmpd-nossl=y'
 if grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*-ssl=[ym]' .config; then
