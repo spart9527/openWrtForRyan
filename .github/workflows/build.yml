@@ -33,8 +33,8 @@ on:
         required: false
         default: ""
   schedule:
-    # 每周一 00:00 CST
-    - cron: "0 16 * * 0"
+    # 每月 1 号 08:00 CST（00:00 UTC）
+    - cron: "0 0 1 * *"
   push:
     branches: [main, master]
     paths:
