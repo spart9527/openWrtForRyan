@@ -1,16 +1,68 @@
 #!/bin/sh
-# 首次启动写入现机习惯。保留配置的 sysupgrade 不会再跑已执行过的脚本。
+# 开机按编译选项（/etc/ryan-build.conf，编译时由 build-options.sh 生成）写入配置。
+# 可重复执行：保留配置升级后再跑一遍也只是把同样的值写回去。
+# Dropbear 不绑定接口：LAN 没起来时绑定会让它起不来；公网由防火墙 wan input=REJECT 挡住。
 
-uci -q batch <<-EOF
-	set system.@system[0].hostname='Ryan-OpenWrt'
+LAN_IP=192.168.1.1 HOSTNAME=Ryan-OpenWrt WEB_SERVER=uhttpd
+WAN_PORT=auto LAN_PORTS=auto WAN_PROTO=keep
+[ -f /etc/ryan-build.conf ] && . /etc/ryan-build.conf
+
+# 选项本来就不存在时 delete 会失败。放在 batch 里会把后面的 LAN 地址一起跳过。
+uci -q delete dropbear.@dropbear[0].Interface || true
+
+uci -q batch <<-EOT
+	set system.@system[0].hostname='$HOSTNAME'
 	set system.@system[0].zonename='Asia/Shanghai'
 	set system.@system[0].timezone='CST-8'
-	set network.lan.ipaddr='192.168.1.1'
+	set network.lan.proto='static'
+	set network.lan.ipaddr='$LAN_IP'
 	set network.lan.netmask='255.255.255.0'
-	set dropbear.@dropbear[0].Interface='lan'
 	commit system
-	commit network
 	commit dropbear
-EOF
+EOT
+
+# 网口：Kwrt 的 def_set_interfaces_lan_wan.patch 在网卡多于 2 个时把 eth1 当 WAN。
+# WAN_PORT=auto 时不动网口，用 Kwrt/现有配置。
+if [ "$WAN_PORT" != auto ]; then
+	if [ "$LAN_PORTS" = auto ]; then
+		LAN_PORTS="$(ls /sys/class/net | grep -E '^eth[0-9]+$' | grep -vx "$WAN_PORT" | tr '\n' ' ')"
+	fi
+	# 指定的口在这台机器上不存在时不改，免得把网改断
+	ok=1
+	[ -n "$LAN_PORTS" ] || { ok=0; logger -t ryan-home "no LAN port found, skip port pinning"; }
+	for p in $WAN_PORT $LAN_PORTS; do
+		[ -e "/sys/class/net/$p" ] || { ok=0; logger -t ryan-home "port $p not found, skip port pinning"; }
+	done
+	if [ "$ok" = 1 ]; then
+		br=""
+		for s in $(uci -q show network | sed -n "s/^network\.\([^.=]*\)\.name='br-lan'$/\1/p"); do
+			br="$s"
+		done
+		if [ -z "$br" ]; then
+			br="$(uci add network device)"
+			uci set network."$br".name='br-lan'
+			uci set network."$br".type='bridge'
+		fi
+		uci -q delete network."$br".ports
+		for p in $LAN_PORTS; do uci add_list network."$br".ports="$p"; done
+		uci set network.lan.device='br-lan'
+		uci set network.wan=interface
+		uci set network.wan.device="$WAN_PORT"
+		uci -q get network.wan6 >/dev/null && uci set network.wan6.device='@wan'
+	fi
+fi
+
+# 拨号方式：keep 不动；pppoe 只改协议，账号密码沿用现有配置（全新刷机后在 LuCI 填）
+case "$WAN_PROTO" in
+	pppoe|dhcp) uci set network.wan.proto="$WAN_PROTO" ;;
+esac
+uci commit network
+
+# Web 服务器：选 uhttpd 时，若有包把 nginx 带进来，停掉它，免得抢 80/443
+if [ "$WEB_SERVER" = uhttpd ] && [ -x /etc/init.d/nginx ] && [ -x /etc/init.d/uhttpd ]; then
+	/etc/init.d/nginx disable
+	/etc/init.d/nginx stop 2>/dev/null
+	/etc/init.d/uhttpd enable
+fi
 
 exit 0

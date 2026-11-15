@@ -2,6 +2,36 @@ name: Build x86_64 firmware
 
 on:
   workflow_dispatch:
+    # 手动触发时在页面上选；留空用 build.conf 里的默认值
+    # 手动触发时页面上已预填建议值，可直接改；定时/push 编译用 build.conf
+    inputs:
+      lan_ip:
+        description: "后台地址 LAN IP"
+        required: true
+        default: "192.168.1.1"
+      web_server:
+        description: "Web 服务器（建议 uhttpd）"
+        type: choice
+        options: [uhttpd, nginx]
+        default: uhttpd
+      wan_port:
+        description: "WAN 口（建议 eth0；auto=交给 Kwrt 分配，不建议）"
+        type: choice
+        options: [eth0, eth1, eth2, eth3, auto]
+        default: eth0
+      lan_ports:
+        description: "LAN 口：auto=除 WAN 外所有口（建议）；或列口名，空格分隔，如 eth1 eth2"
+        required: true
+        default: "auto"
+      wan_proto:
+        description: "WAN 拨号（建议 keep=升级保留现有设置；账号密码不进固件）"
+        type: choice
+        options: [keep, pppoe, dhcp]
+        default: keep
+      extra_packages:
+        description: "额外软件包，空格分隔，可留空（私有包别填这里）"
+        required: false
+        default: ""
   schedule:
     # 每周一 00:00 CST
     - cron: "0 16 * * 0"
@@ -10,6 +40,7 @@ on:
     paths:
       - "packages.txt"
       - "extra.config"
+      - "build.conf"
       - "files/**"
       - "scripts/**"
       - ".github/workflows/build.yml"
@@ -61,6 +92,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
 
       - name: Prepare OpenWrt tree
+        env:
+          IN_LAN_IP: ${{ inputs.lan_ip }}
+          IN_WEB_SERVER: ${{ inputs.web_server }}
+          IN_WAN_PORT: ${{ inputs.wan_port }}
+          IN_LAN_PORTS: ${{ inputs.lan_ports }}
+          IN_WAN_PROTO: ${{ inputs.wan_proto }}
+          IN_EXTRA_PACKAGES: ${{ inputs.extra_packages }}
         run: |
           chmod +x scripts/prepare.sh
           ./scripts/prepare.sh
@@ -104,6 +142,12 @@ jobs:
           cp openwrt/bin/targets/x86/64/*ext4-combined-efi.img.gz out/ || true
           cp openwrt/bin/targets/x86/64/sha256sums out/ || true
           cp openwrt/.config out/config.build || true
+          cp openwrt/files/etc/ryan-build.conf out/ryan-build.conf || true
+          {
+            echo "BUILD_OPTS<<EOF"
+            sed 's/^/- /' openwrt/files/etc/ryan-build.conf
+            echo "EOF"
+          } >> "$GITHUB_ENV"
           ls -lh out
           test -n "$(ls -A out/*ext4-combined-efi.img.gz 2>/dev/null)"
 
@@ -128,8 +172,10 @@ jobs:
             基于 kiddin9/Kwrt `25.12` + OpenWrt `openwrt-25.12`。
             刷机文件：`*-ext4-combined-efi.img.gz`（EFI + ext4）。
 
-            - LAN: `192.168.1.1`
-            - SSH: 仅 LAN
+            编译选项：
+            ${{ env.BUILD_OPTS }}
+
+            - SSH: 端口见现机配置，公网由防火墙挡住
             - 包清单：`packages.txt`
           fail_on_unmatched_files: true
         env:

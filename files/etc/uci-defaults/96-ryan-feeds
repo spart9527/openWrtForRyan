@@ -1,0 +1,6 @@
+#!/bin/sh
+# 自编固件的内核版本在 dl.openwrt.ai 上没有对应的 targets/.../<kernel>/ 目录，
+# core 源永远 404，会让 opkg update 返回失败。内核模块只随整包固件更新，直接注释掉。
+F=/etc/opkg/distfeeds.conf
+[ -f "$F" ] && sed -i 's|^src/gz \([^ ]*_core\) |# src/gz \1 |' "$F"
+exit 0

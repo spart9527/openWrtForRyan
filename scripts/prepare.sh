@@ -88,12 +88,12 @@ fi
 rm -rf tmp
 
 echo "==> apply home overlay"
-# Kwrt 把默认 LAN 改成 10.0.0.1，改回现机的 192.168.1.1
-sed -i 's/10.0.0/192.168.1/g' package/base-files/files/bin/config_generate || true
-
 # 首次启动脚本和升级保留列表
 mkdir -p files
 cp -a "$ROOT/files/." files/
+
+# 编译选项（LAN IP、Web 服务器、网口、拨号方式、额外包），见 build.conf
+/bin/bash "$ROOT/scripts/build-options.sh" "$ROOT"
 
 apply_home_config() {
   echo >> .config
@@ -104,6 +104,7 @@ apply_home_config() {
     [ -z "$pkg" ] && continue
     echo "CONFIG_PACKAGE_${pkg}=y" >> .config
   done < "$ROOT/packages.txt"
+  cat build-options.config >> .config
 }
 
 apply_home_config
@@ -146,6 +147,8 @@ require_config 'CONFIG_ARCH="x86_64"'
 require_config 'CONFIG_TARGET_BOARD="x86"'
 require_config 'CONFIG_TARGET_SUBTARGET="64"'
 require_config 'CONFIG_TARGET_PROFILE="DEVICE_generic"'
+require_config 'CONFIG_TARGET_KERNEL_PARTSIZE=16'
+require_config 'CONFIG_TARGET_ROOTFS_PARTSIZE=1004'
 require_config 'CONFIG_PACKAGE_snmpd-nossl=y'
 if grep -E '^CONFIG_PACKAGE_[^=]*snmp[^=]*-ssl=[ym]' .config; then
   echo "ERROR: a snmp *-ssl package is still enabled" >&2
@@ -156,6 +159,25 @@ if [ -d feeds/kiddin9/net-snmp-ssl ] || [ -d package/feeds/kiddin9/net-snmp-ssl 
   echo "ERROR: kiddin9 net-snmp-ssl still present" >&2
   exit 1
 fi
+
+# 按编译选项核对 Web 服务器，避免再出现根路径 403 进不去后台
+. files/etc/ryan-build.conf
+if [ "$WEB_SERVER" = uhttpd ]; then
+  require_config 'CONFIG_PACKAGE_luci=y'
+  require_config 'CONFIG_PACKAGE_uhttpd=y'
+  if grep -qE '^CONFIG_PACKAGE_luci-nginx=[ym]' .config; then
+    echo "ERROR: WEB_SERVER=uhttpd but luci-nginx is still enabled" >&2
+    exit 1
+  fi
+  if grep -qE '^CONFIG_PACKAGE_nginx[^=]*=y' .config; then
+    echo "WARN: nginx pulled in by another package; 99-ryan-home disables it at boot" >&2
+  fi
+else
+  require_config 'CONFIG_PACKAGE_luci-nginx=y'
+fi
+for p in $(grep -E '^CONFIG_PACKAGE_' build-options.config | sed 's/^CONFIG_PACKAGE_\(.*\)=y$/\1/'); do
+  require_config "CONFIG_PACKAGE_${p}=y"
+done
 
 echo "==> enabled extra luci apps:"
 grep -E '^CONFIG_PACKAGE_luci-app-.*=y' .config | sort

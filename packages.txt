@@ -44,4 +44,3 @@ luci-app-syscontrol
 luci-app-wizard
 luci-app-fan
 luci-app-wifihistory
-luci-nginx
