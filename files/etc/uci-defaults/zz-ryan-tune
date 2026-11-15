@@ -1,0 +1,24 @@
+#!/bin/sh
+# 运行时调优：每次刷机后执行一次，可重复执行。
+# 文件名用 zz- 开头，确保排在 Kwrt 自带的首次启动脚本之后，不被覆盖。
+
+# 8GB 内存不需要 zram 压缩交换；ram_release 定时清缓存反而拖慢；家长控制没在用
+for s in zram ram_release parentcontrol; do
+	[ -x /etc/init.d/$s ] || continue
+	/etc/init.d/$s disable
+	/etc/init.d/$s stop 2>/dev/null
+done
+
+# igc（Intel i226）网卡不支持硬件流量卸载，只保留软件卸载和 fullcone
+uci -q batch <<'UCI'
+set firewall.@defaults[0].flow_offloading='1'
+set firewall.@defaults[0].flow_offloading_hw='0'
+UCI
+
+# 清掉已卸载插件留下的防火墙 include 条目
+for s in dockerd adbyby shadowsocksr passwall2 passwall2_server unblockmusic; do
+	uci -q delete firewall.$s
+done
+uci commit firewall
+
+exit 0
