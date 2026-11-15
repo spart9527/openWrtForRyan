@@ -122,17 +122,33 @@ jobs:
           restore-keys: |
             x86_64-toolchain-
 
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: openwrt/.ccache
+          key: x86_64-ccache-${{ github.run_id }}
+          restore-keys: |
+            x86_64-ccache-
+
+      - name: Download sources
+        run: |
+          cd openwrt
+          make download -j8 || make download -j1 V=s
+          find dl -size -1024c -exec rm -f {} \; || true
+
       - name: Compile
         id: compile
         run: |
           df -hT
           cd openwrt
+          ccache -M 3G -d .ccache >/dev/null 2>&1 || true
           make -j$(($(nproc)+1)) || {
             log=$(mktemp)
             make -j1 V=s >"$log" 2>&1 || true
             tail -n 80 "$log"
             exit 1
           }
+          ccache -s -d .ccache || true
           df -hT
 
       - name: Collect artifacts
