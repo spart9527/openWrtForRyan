@@ -1,6 +1,6 @@
 # Ryan-OpenWrt
 
-家用 x86 软路由固件配置。跟踪 [kiddin9/Kwrt](https://github.com/kiddin9/Kwrt) 的 `25.12` 分支，每周自动编译，插件按 `packages.txt` 打进镜像。
+家用 x86 软路由固件配置。跟踪 [kiddin9/Kwrt](https://github.com/kiddin9/Kwrt) 的 `25.12` 分支，每月 1 号自动编译，插件按 `packages.txt` 打进镜像。
 
 ## 固件约定
 
@@ -45,9 +45,9 @@
 1. 仓库地址：https://github.com/spart9527/openWrtForRyan
 2. 打开仓库 **Settings → Actions → General**：允许 workflow，允许 **Read and write** 权限（用来发 Release）。
 3. **Actions → Build x86_64 firmware → Run workflow**。页面上有 6 个选项，已预填建议值。
-4. 第一次全量大约 2～5 小时。成功后 Releases 里会有镜像和 `ryan-build.conf`。
+4. 只编进固件的包（已关闭 Kwrt 默认的 `ALL_NONSHARED` / `ALL_KMODS` / ImageBuilder），并缓存 ccache。成功后 Releases 里会有镜像和 `ryan-build.conf`。
 
-定时：每周一 00:00（北京时间）自动编一次。
+定时：每月 1 号 08:00（北京时间）自动编一次。只改 `README.md` 不会触发编译。
 
 ## 固件更新顺序
 
@@ -81,6 +81,16 @@ install-private-packages
 
 网络起不来时：无配置再刷一次，只手工恢复 `network` / `firewall` / `dhcp` / `dropbear`，然后 `install-private-packages`，需要的话从备份取出 OpenVPN 证书。
 
+## 刷机后自动调优
+
+`files/etc/uci-defaults/zz-ryan-tune` 每次刷机后跑一遍（排在 Kwrt 自带脚本之后），可重复执行：
+
+- 关闭 `zram`、`ram_release`、`parentcontrol` 自启（8GB 内存不需要压缩交换和定时清缓存；家长控制没在用，要用时在 LuCI 里勾选开启）
+- 防火墙只开软件流量卸载：`flow_offloading=1`、`flow_offloading_hw=0`（igc / i226 网卡不支持硬件卸载）
+- 删除已卸载插件残留的防火墙 include：`dockerd`、`adbyby`、`shadowsocksr`、`passwall2`、`passwall2_server`、`unblockmusic`
+
+不要对 `miniupnpd-nftables` / `luci-app-upnp` 做 `opkg install --force-reinstall`：`luci-app-upnp` 不在任何在线源里，卸掉就装不回来，只能从固件镜像里提取或重刷。
+
 ## 刷机后验证
 
 - `cat /etc/ryan-build.conf` 与 Release 说明一致
@@ -92,6 +102,8 @@ install-private-packages
 - `uci get dhcp.@dnsmasq[0].port` 为 `0`（私有包装齐之后）
 - `nslookup baidu.com 127.0.0.1` 正常
 - `opkg update` 不再报 core 源 404
+- `/etc/init.d/zram enabled || echo off` 输出 `off`；`uci get firewall.@defaults[0].flow_offloading_hw` 为 `0`
+- LuCI 的 UPnP 页面打开不报错
 
 ## 本地试配置（可选）
 
