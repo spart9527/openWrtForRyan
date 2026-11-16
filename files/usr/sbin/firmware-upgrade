@@ -1,6 +1,5 @@
 #!/bin/sh
 # 一键升级：备份 → 下载最新公开固件 → 保留配置刷入。
-# 若固件已编入互联网组件，一般不必再靠私有清单；否则开机后会按 /root/private-packages.txt 补装。
 # 用法：
 #   firmware-upgrade --check
 #   firmware-upgrade
@@ -10,7 +9,6 @@ set -e
 REPO="${REPO:-spart9527/openWrtForRyan}"
 PROXY="${GITHUB_PROXY:-https://ghfast.top/}"
 KEEP_CONFIG="${KEEP_CONFIG:-1}"
-LIST="${PRIVATE_PACKAGES:-/root/private-packages.txt}"
 
 API="https://api.github.com/repos/${REPO}/releases/latest"
 echo "检查 $API"
@@ -79,20 +77,6 @@ if [ "${1:-}" = "--check" ]; then
 	exit 0
 fi
 
-if [ ! -f "$LIST" ]; then
-	if [ -n "${INTERNET:-}" ] && [ "$INTERNET" != none ]; then
-		echo "注意: 没有 $LIST。新固件已编入互联网组件 $INTERNET，一般不用再补装私有包。"
-	else
-		echo "警告: 没有 $LIST ，重启后不会自动安装私有插件（PassWall 等会消失）"
-		if [ "${FORCE:-0}" != "1" ]; then
-			echo "先补好清单，或用 FORCE=1 firmware-upgrade 强制继续"
-			exit 1
-		fi
-	fi
-elif ! sysupgrade -l | grep -qx "$LIST"; then
-	echo "警告: $LIST 不在 sysupgrade 保留列表里，检查 /etc/sysupgrade.conf"
-fi
-
 SNAP="/root/pre-upgrade-$(date +%Y%m%d-%H%M%S).uci"
 echo "保存网络相关配置快照到 $SNAP"
 for c in network dhcp firewall dropbear; do
@@ -123,7 +107,7 @@ fi
 # 让 sysupgrade 先检查镜像格式，不通过就不刷
 sysupgrade -T "$TMP"
 
-echo "开始刷机，设备会重启。私有插件在开机联网后自动安装。"
+echo "开始刷机，设备会重启。"
 if [ "$KEEP_CONFIG" = "1" ]; then
 	sysupgrade -v "$TMP"
 else

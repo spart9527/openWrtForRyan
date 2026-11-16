@@ -43,7 +43,7 @@ on:
         options: [off, on]
         default: off
       internet:
-        description: "科学上网客户端，直接编进固件，刷完即可使用，不必再靠私有包补装。passwall=PassWall + SmartDNS 及现机依赖（默认）；passwall2、openclash、homeproxy、ssr-plus=其他客户端 + SmartDNS；none=不编入。不含 WireGuard。节点和订阅配置留在路由器上，不会进入公开镜像。"
+        description: "科学上网客户端，直接编进固件，刷完即可使用。passwall=PassWall + SmartDNS 及现机依赖（默认）；passwall2、openclash、homeproxy、ssr-plus=其他客户端 + SmartDNS；none=不编入。不含 WireGuard。节点和订阅配置留在路由器上，不会进入公开镜像。"
         type: choice
         options: [passwall, passwall2, openclash, homeproxy, ssr-plus, none]
         default: passwall
@@ -57,7 +57,7 @@ on:
         options: [yes, no]
         default: yes
       extra_packages:
-        description: "额外编进固件的软件包，空格分隔，可留空。包名写错会导致编译失败。不想公开或只是临时需要的包，可以不填这里，改放在路由器 /root/private-packages.txt，开机联网后自动补装。"
+        description: "额外编进固件的软件包，空格分隔，可留空。包名写错会导致编译失败。科学上网请用上面的“互联网”选项，不要写在这里。"
         required: false
         default: ""
   schedule:

@@ -1,7 +1,0 @@
-#!/bin/sh
-# WAN 拨号成功后补装私有包（开机那次没等到网络时）。清单里的包都装上了就很快返回。
-[ "$ACTION" = "ifup" ] || exit 0
-[ "$INTERFACE" = "wan" ] || exit 0
-[ -x /etc/init.d/private-packages ] || exit 0
-( /etc/init.d/private-packages start ) >/dev/null 2>&1 &
-exit 0

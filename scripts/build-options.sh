@@ -65,7 +65,7 @@ for p in $EXTRA_PACKAGES; do
 done
 
 # 互联网组件：选客户端后把对应包编进固件。smartdns 随非 none 的选项一起带上。
-# passwall 额外带上现机私有清单里的依赖，刷完不必再补装。
+# passwall 额外带上现机在用的依赖，刷完即可用。
 internet_packages() {
   case "$INTERNET" in
     none) return 0 ;;
