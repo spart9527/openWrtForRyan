@@ -65,7 +65,7 @@ for p in $EXTRA_PACKAGES; do
 done
 
 # 互联网组件：选客户端后把对应包编进固件。smartdns 随非 none 的选项一起带上。
-# passwall 额外带上现机私有清单里的依赖，刷完不必再补装。
+# passwall 额外带上现机在用的依赖，刷完即可用。
 internet_packages() {
   case "$INTERNET" in
     none) return 0 ;;
@@ -141,6 +141,8 @@ apply_text devices/common/diy/package/base-files/files/etc/banner
     echo "# CONFIG_TARGET_ROOTFS_EXT4FS is not set"
     echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y"
   fi
+  # 仅写入 .config 不够：OpenWrt 25.12 的 CONFIG_IPV6 是无提示 def_bool y，
+  # prepare.sh 会在 make defconfig 前把 Config-build.in 的默认改成 n。
   if [ "$IPV6" = off ]; then
     echo "# CONFIG_IPV6 is not set"
     echo "# CONFIG_PACKAGE_ds-lite is not set"

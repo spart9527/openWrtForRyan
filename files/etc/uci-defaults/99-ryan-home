@@ -68,6 +68,15 @@ if [ "$WEB_SERVER" = uhttpd ] && [ -x /etc/init.d/nginx ] && [ -x /etc/init.d/uh
 	/etc/init.d/uhttpd enable
 fi
 
+# 升级可能保留 dnsmasq port=0（53 端口交给 SmartDNS/PassWall）。
+# 若这版固件没编这些包，把 53 还给 dnsmasq，避免全家 DNS 中断。
+if [ "$(uci -q get dhcp.@dnsmasq[0].port)" = 0 ]; then
+	if [ ! -x /etc/init.d/smartdns ] && [ ! -x /etc/init.d/passwall ] && [ ! -x /etc/init.d/passwall2 ]; then
+		uci -q delete dhcp.@dnsmasq[0].port
+		uci commit dhcp
+	fi
+fi
+
 # IPv6 关闭时清掉升级保留下来的 wan6 / LAN IPv6 / DHCPv6，避免残留配置
 if [ "$IPV6" = off ]; then
 	uci -q delete network.wan6

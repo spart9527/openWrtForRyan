@@ -1,3 +1,0 @@
-#!/bin/sh
-[ -x /etc/init.d/private-packages ] && /etc/init.d/private-packages enable
-exit 0

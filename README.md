@@ -40,13 +40,11 @@
 
 ## 改插件
 
-公开镜像里的基础包写在 [`packages.txt`](packages.txt)。科学上网相关包由 `INTERNET` 选项编进固件，不必再写进私有清单。推到 `main` 或在 Actions 里 **Run workflow**。
+公开镜像里的基础包写在 [`packages.txt`](packages.txt)。科学上网相关包由 `INTERNET` 选项编进固件（默认 PassWall + SmartDNS）。推到 `main` 或在 Actions 里 **Run workflow**。
 
-还需要临时或不想公开的包，可以写到路由上的 `/root/private-packages.txt`（一行一个包名）。新固件开机后按清单逐个检查、缺的才装；某个包下架不影响其它包。WAN 每次拨号成功都会再试，直到装齐。默认已经编入 PassWall 和 SmartDNS 时，一般不用再维护这份清单。
+这台机器不用 WireGuard，也不要把 `luci-proto-wireguard`、`wireguard-tools` 加进固件：自编内核匹配不到现成的 `kmod-wireguard`。
 
-不要把 `luci-proto-wireguard`、`wireguard-tools` 放进私有清单：这台机器不用 WireGuard，自编内核也拿不到 `kmod-wireguard`。
-
-`/root/` 已加入升级保留列表。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
+`/root/` 已加入升级保留列表（备份、证书等）。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
 
 ## GitHub 上编译
 
@@ -61,14 +59,6 @@
 
 只刷 **Actions 成功** 后 Releases 里与本次 `FILESYSTEM` 对应的 `*-combined-efi.img.gz`。正在跑或已取消的编译不要用。
 
-刷之前确认：
-
-```sh
-sysupgrade -l | grep private-packages
-```
-
-（若已不再使用私有清单，可跳过。）
-
 **之后每次一键（新固件里）：**
 
 ```sh
@@ -76,16 +66,9 @@ firmware-upgrade --check
 firmware-upgrade
 ```
 
-会先核对新固件的编译选项和现机（LAN IP、WAN 口是否存在、文件系统是否一致）。不一致就停下，确认没问题再用 `FORCE=1 firmware-upgrade`。若新固件关闭了 IPv6，会提示刷机后将清除 `wan6` 等配置。接着保存 `network` / `dhcp` / `firewall` / `dropbear` 快照，备份到 `/root/backup-latest.tar.gz`，校验 sha256，用 `sysupgrade -T` 预检，再保留配置刷入。PassWall 和 SmartDNS 默认已在镜像里；若仍有私有清单，开机联网后会自动补装。OpenVPN 已在镜像里。
+会先核对新固件的编译选项和现机（LAN IP、WAN 口是否存在、文件系统是否一致）。不一致就停下，确认没问题再用 `FORCE=1 firmware-upgrade`。若新固件关闭了 IPv6，会提示刷机后将清除 `wan6` 等配置。接着保存 `network` / `dhcp` / `firewall` / `dropbear` 快照，备份到 `/root/backup-latest.tar.gz`，校验 sha256，用 `sysupgrade -T` 预检，再保留配置刷入。PassWall、SmartDNS 和 OpenVPN 默认已在镜像里。
 
 旧固件里的 `firmware-upgrade` 还没有这些检查。第一次请在 LuCI 里上传 Release 的镜像并勾选保留配置，或先把仓库里的 `scripts/router-upgrade.sh` 拷到路由的 `/usr/sbin/firmware-upgrade` 再跑 `--check`。有人在家、能接显示器或笔记本时再刷。
-
-手动补装（自动失败时）：
-
-```sh
-logread -e private-packages
-install-private-packages
-```
 
 不要在现机上对 `kmod-*` 做 `opkg upgrade`。内核只通过刷整包固件更新。
 
