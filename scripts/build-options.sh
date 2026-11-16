@@ -141,18 +141,16 @@ apply_text devices/common/diy/package/base-files/files/etc/banner
     echo "# CONFIG_TARGET_ROOTFS_EXT4FS is not set"
     echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y"
   fi
-  # 仅写入 .config 不够：OpenWrt 25.12 的 CONFIG_IPV6 是无提示 def_bool y，
-  # prepare.sh 会在 make defconfig 前把 Config-build.in 的默认改成 n。
+  # CONFIG_IPV6 两种选项都保持 y：firewall4 的 inet 表需要内核 IPv6，
+  # 关掉会连带去掉 firewall4 和 LuCI（见 prepare.sh）。IPV6=off 只去掉 IPv6 组件。
+  echo "CONFIG_IPV6=y"
   if [ "$IPV6" = off ]; then
-    echo "# CONFIG_IPV6 is not set"
     echo "# CONFIG_PACKAGE_ds-lite is not set"
     echo "# CONFIG_PACKAGE_odhcp6c is not set"
     echo "# CONFIG_PACKAGE_ipv6helper is not set"
     echo "# CONFIG_PACKAGE_6in4 is not set"
     echo "# CONFIG_PACKAGE_6rd is not set"
     echo "# CONFIG_PACKAGE_6to4 is not set"
-  else
-    echo "CONFIG_IPV6=y"
   fi
   if [ "$REMOVE_AUTHOR_LINKS" = yes ]; then
     echo 'CONFIG_VERSION_HOME_URL=""'
