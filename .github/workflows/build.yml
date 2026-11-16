@@ -6,30 +6,58 @@ on:
     # 手动触发时页面上已预填建议值，可直接改；定时/push 编译用 build.conf
     inputs:
       lan_ip:
-        description: "后台地址 LAN IP"
+        description: "后台地址，也就是 LAN 口 IP。刷机后会按这个值写入，并覆盖你在后台改过的 LAN IP。默认 192.168.1.1。"
         required: true
         default: "192.168.1.1"
+      hostname:
+        description: "路由器主机名，显示在后台和终端提示符里。刷机后会按这个值写入，并覆盖你在后台改过的主机名。默认 Ryan-OpenWrt。"
+        required: true
+        default: "Ryan-OpenWrt"
       web_server:
-        description: "Web 服务器（建议 uhttpd）"
+        description: "LuCI 后台用的 Web 服务器。uhttpd 是 OpenWrt 传统方案，访问 http://后台地址/ 即可登录（推荐）。nginx 是 Kwrt 默认，但根路径可能出现 403。"
         type: choice
         options: [uhttpd, nginx]
         default: uhttpd
       wan_port:
-        description: "WAN 口（建议 eth0；auto=交给 Kwrt 分配，不建议）"
+        description: "WAN 口（接光猫/上网的那张网卡）。建议 eth0，与现机一致。选 auto 则交给 Kwrt 分配；机器有 3 个及以上网口时 Kwrt 会把 eth1 当 WAN，不建议。"
         type: choice
         options: [eth0, eth1, eth2, eth3, auto]
         default: eth0
       lan_ports:
-        description: "LAN 口：auto=除 WAN 外所有口（建议）；或列口名，空格分隔，如 eth1 eth2"
+        description: "LAN 口。填 auto 表示除 WAN 外的所有 eth 口（推荐）；也可指定口名，空格分隔，如 eth1 eth2。指定的口在这台机器上不存在时，开机脚本不会改网口，以免断网。"
         required: true
         default: "auto"
       wan_proto:
-        description: "WAN 拨号（建议 keep=升级保留现有设置；账号密码不进固件）"
+        description: "WAN 拨号方式。keep=升级时保留现有设置（推荐）；pppoe=只改成 PPPoE 协议，账号密码沿用现机，全新刷机后需在后台填写；dhcp=自动获取 IP。账号密码不会写入固件。"
         type: choice
         options: [keep, pppoe, dhcp]
         default: keep
+      filesystem:
+        description: "根文件系统。ext4=根分区可直接读写，与现机一致（推荐）。squashfs=系统文件只读，改动在 overlay 里，误删的出厂文件可从 /rom 恢复，但不能回滚到上一版固件。从一种格式换到另一种会整盘重写分区，不能当普通升级。"
+        type: choice
+        options: [ext4, squashfs]
+        default: ext4
+      ipv6:
+        description: "是否编译并启用 IPv6。默认关闭。选 off 会从内核和软件包去掉 IPv6，刷机后也会清除现有的 wan6、LAN IPv6 和 DHCPv6 配置。选 on 则保留 OpenWrt 默认的 IPv6 能力。"
+        type: choice
+        options: [off, on]
+        default: off
+      internet:
+        description: "科学上网客户端，直接编进固件，刷完即可使用，不必再靠私有包补装。passwall=PassWall + SmartDNS 及现机依赖（默认）；passwall2、openclash、homeproxy、ssr-plus=其他客户端 + SmartDNS；none=不编入。不含 WireGuard。节点和订阅配置留在路由器上，不会进入公开镜像。"
+        type: choice
+        options: [passwall, passwall2, openclash, homeproxy, ssr-plus, none]
+        default: passwall
+      signature:
+        description: "自定义版本签名，出现在 SSH 登录横幅和系统信息里，用来替换 Kwrt 自带的 by Kiddin'。留空则去掉作者签名，只显示 Ryan-OpenWrt 和版本号。"
+        required: false
+        default: ""
+      remove_author_links:
+        description: "是否去掉固件里的作者外链。默认 yes，会清除 LuCI 和横幅里指向 openwrt.ai 的主页链接。软件源地址 dl.openwrt.ai 会保留，不影响 opkg 装包。"
+        type: choice
+        options: [yes, no]
+        default: yes
       extra_packages:
-        description: "额外软件包，空格分隔，可留空（私有包别填这里）"
+        description: "额外编进固件的软件包，空格分隔，可留空。包名写错会导致编译失败。不想公开或只是临时需要的包，可以不填这里，改放在路由器 /root/private-packages.txt，开机联网后自动补装。"
         required: false
         default: ""
   schedule:
@@ -94,10 +122,16 @@ jobs:
       - name: Prepare OpenWrt tree
         env:
           IN_LAN_IP: ${{ inputs.lan_ip }}
+          IN_HOSTNAME: ${{ inputs.hostname }}
           IN_WEB_SERVER: ${{ inputs.web_server }}
           IN_WAN_PORT: ${{ inputs.wan_port }}
           IN_LAN_PORTS: ${{ inputs.lan_ports }}
           IN_WAN_PROTO: ${{ inputs.wan_proto }}
+          IN_FILESYSTEM: ${{ inputs.filesystem }}
+          IN_IPV6: ${{ inputs.ipv6 }}
+          IN_INTERNET: ${{ inputs.internet }}
+          IN_SIGNATURE: ${{ inputs.signature }}
+          IN_REMOVE_AUTHOR_LINKS: ${{ inputs.remove_author_links }}
           IN_EXTRA_PACKAGES: ${{ inputs.extra_packages }}
         run: |
           chmod +x scripts/prepare.sh
@@ -155,7 +189,14 @@ jobs:
         run: |
           mkdir -p out
           shopt -s nullglob
-          cp openwrt/bin/targets/x86/64/*ext4-combined-efi.img.gz out/ || true
+          # shellcheck disable=SC1091
+          . openwrt/files/etc/ryan-build.conf
+          if [ "$FILESYSTEM" = squashfs ]; then
+            imgpat='*squashfs-combined-efi.img.gz'
+          else
+            imgpat='*ext4-combined-efi.img.gz'
+          fi
+          cp openwrt/bin/targets/x86/64/$imgpat out/ || true
           cp openwrt/bin/targets/x86/64/sha256sums out/ || true
           cp openwrt/.config out/config.build || true
           cp openwrt/files/etc/ryan-build.conf out/ryan-build.conf || true
@@ -163,9 +204,10 @@ jobs:
             echo "BUILD_OPTS<<EOF"
             sed 's/^/- /' openwrt/files/etc/ryan-build.conf
             echo "EOF"
+            echo "IMAGE_PAT=$imgpat"
           } >> "$GITHUB_ENV"
           ls -lh out
-          test -n "$(ls -A out/*ext4-combined-efi.img.gz 2>/dev/null)"
+          test -n "$(ls -A out/$imgpat 2>/dev/null)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -186,7 +228,7 @@ jobs:
           files: out/*
           body: |
             基于 kiddin9/Kwrt `25.12` + OpenWrt `openwrt-25.12`。
-            刷机文件：`*-ext4-combined-efi.img.gz`（EFI + ext4）。
+            刷机文件：按本次选项生成的 `*-combined-efi.img.gz`（EFI，文件系统见下面的 FILESYSTEM）。
 
             编译选项：
             ${{ env.BUILD_OPTS }}

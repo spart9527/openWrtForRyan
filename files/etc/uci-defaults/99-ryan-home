@@ -5,6 +5,9 @@
 
 LAN_IP=192.168.1.1 HOSTNAME=Ryan-OpenWrt WEB_SERVER=uhttpd
 WAN_PORT=auto LAN_PORTS=auto WAN_PROTO=keep
+# 旧固件的 ryan-build.conf 没有下面几项；缺省保持原状，避免误清 IPv6
+FILESYSTEM=ext4 IPV6=on INTERNET=none
+SIGNATURE= REMOVE_AUTHOR_LINKS=no
 [ -f /etc/ryan-build.conf ] && . /etc/ryan-build.conf
 
 # 选项本来就不存在时 delete 会失败。放在 batch 里会把后面的 LAN 地址一起跳过。
@@ -63,6 +66,29 @@ if [ "$WEB_SERVER" = uhttpd ] && [ -x /etc/init.d/nginx ] && [ -x /etc/init.d/uh
 	/etc/init.d/nginx disable
 	/etc/init.d/nginx stop 2>/dev/null
 	/etc/init.d/uhttpd enable
+fi
+
+# IPv6 关闭时清掉升级保留下来的 wan6 / LAN IPv6 / DHCPv6，避免残留配置
+if [ "$IPV6" = off ]; then
+	uci -q delete network.wan6
+	uci -q delete network.lan.ip6assign
+	uci -q delete network.lan.ip6class
+	uci -q delete network.lan.ip6addr
+	uci -q delete network.lan.ip6hint
+	uci -q delete network.lan.ip6ifaceid
+	uci -q delete network.globals.ula_prefix
+	uci commit network
+	uci -q delete dhcp.lan.dhcpv6
+	uci -q delete dhcp.lan.ra
+	uci -q delete dhcp.lan.ra_management
+	uci -q delete dhcp.lan.ra_slaac
+	uci -q delete dhcp.lan.ra_flags
+	uci -q delete dhcp.lan.ndp
+	uci commit dhcp
+	for s in $(uci -q show firewall | sed -n "s/^firewall\.\([^=]*\)\.name='wan'$/\1/p"); do
+		uci -q del_list firewall."$s".network='wan6'
+	done
+	uci commit firewall
 fi
 
 exit 0
