@@ -15,6 +15,7 @@
 - 主机名：`Ryan-OpenWrt`
 - IPv6：默认开启，刷机不改现有的 `wan6` 等配置。不用 IPv6 就在路由器上关掉 `wan6`。选 `off` 会不装 IPv6 拨号/隧道组件，并在刷机后清除 `wan6`、LAN IPv6 和 DHCPv6；内核仍保留 IPv6，因为 firewall4 的防火墙表需要它
 - 互联网：默认把 PassWall、SmartDNS 和现机依赖编进固件
+- OpenVPN：镜像含 `luci-app-openvpn-server-client`、`openvpn-openssl`、`openvpn-easy-rsa`。不含演示账号、占位 DDNS（`myserver.f3322.net`）或示例推送路由 `192.168.9.0/24`。全新安装后在 LuCI 里自行配置、在本机生成证书并填写用户名密码，再启用服务。WAN 上的 1194（或你改过的端口）只在服务端启用时放行，停止或未启用时关闭。保留配置升级会保留 `/etc/config/openvpn`、`/etc/openvpn/`、`/etc/easy-rsa/`
 - 后台密码不作为编译选项：仓库和 Release 是公开的，密码不能写进固件。升级会保留现有 `/etc/shadow`，在路由器上改即可
 
 ## 编译选项
@@ -51,7 +52,7 @@
 1. 仓库地址：https://github.com/spart9527/openWrtForRyan
 2. 打开仓库 **Settings → Actions → General**：允许 workflow，允许 **Read and write** 权限（用来发 Release）。
 3. **Actions → Build x86_64 firmware → Run workflow**。页面上每一项都有说明，并已预填建议值。
-4. 只编进固件的包（已关闭 Kwrt 默认的 `ALL_NONSHARED` / `ALL_KMODS` / ImageBuilder），并缓存 ccache。成功后 Releases 里会有镜像和 `ryan-build.conf`。
+4. 只编进固件的包（已关闭 Kwrt 默认的 `ALL_NONSHARED` / `ALL_KMODS` / ImageBuilder），并缓存工具链、ccache 和 Go 编译缓存（dl/ 按体积可选）。成功后 Releases 里会有镜像和 `ryan-build.conf`。
 
 定时：每月 1 号 08:00（北京时间）自动编一次。只改 `README.md` 不会触发编译。
 
@@ -98,6 +99,7 @@ firmware-upgrade
 - `opkg update` 不再报 core 源 404
 - `/etc/init.d/zram enabled || echo off` 输出 `off`；`uci get firewall.@defaults[0].flow_offloading_hw` 为 `0`
 - LuCI 的 UPnP 页面打开不报错
+- 全新安装：`uci get openvpn.myvpn.enabled` 为 `0`；`uci get firewall.openvpn.enabled` 为 `0`；`uci -q get openvpn.myvpn.ddns` 应为空；`/etc/openvpn/server/psw-file` 不存在。保留配置升级：OpenVPN 配置和证书仍是你原来的；若服务端是启用的，则 `uci get firewall.openvpn.enabled` 为 `1`
 
 ## 本地试配置（可选）
 
