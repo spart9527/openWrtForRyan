@@ -1,0 +1,96 @@
+#!/bin/sh
+# 覆盖 luci-app-openvpn-server-client 的 uci-defaults/openvpn。
+# 不写入占位 DDNS 或示例局域网推送路由，不创建演示密码文件，不无条件打 WAN 1194。
+# 已有的 myvpn、证书、密码文件、vpn 区域一律保留。
+
+# 全新安装：若还没有 myvpn，写一份禁用的最小段，让 LuCI 能打开页面。
+if ! uci -q get openvpn.myvpn >/dev/null; then
+	uci -q batch <<-EOF
+		set openvpn.myvpn=openvpn
+		set openvpn.myvpn.enabled='0'
+		set openvpn.myvpn.proto='tcp4'
+		set openvpn.myvpn.dev='tun'
+		set openvpn.myvpn.topology='subnet'
+		set openvpn.myvpn.server='10.8.0.0 255.255.255.0'
+		set openvpn.myvpn.ca='/etc/openvpn/pki/ca.crt'
+		set openvpn.myvpn.dh='/etc/openvpn/pki/dh.pem'
+		set openvpn.myvpn.cert='/etc/openvpn/pki/server.crt'
+		set openvpn.myvpn.key='/etc/openvpn/pki/server.key'
+		set openvpn.myvpn.persist_key='1'
+		set openvpn.myvpn.persist_tun='1'
+		set openvpn.myvpn.max_clients='88'
+		set openvpn.myvpn.keepalive='10 120'
+		set openvpn.myvpn.verb='3'
+		set openvpn.myvpn.status='/var/log/openvpn_status.log'
+		set openvpn.myvpn.log='/tmp/openvpn.log'
+		set openvpn.myvpn.port='1194'
+		set openvpn.myvpn.auth_user_pass_verify='/etc/openvpn/server/checkpsw.sh via-env'
+		set openvpn.myvpn.script_security='3'
+		commit openvpn
+	EOF
+fi
+
+# vpn 接口和区域是基础设施，不是 WAN 洞；只在缺失时创建，不 delete 重建。
+if ! uci -q get network.vpn0 >/dev/null; then
+	uci -q batch <<-EOF
+		set network.vpn0=interface
+		set network.vpn0.device='tun0'
+		set network.vpn0.proto='none'
+		commit network
+	EOF
+fi
+
+if ! uci -q get firewall.vpn >/dev/null; then
+	uci -q batch <<-EOF
+		set firewall.vpn=zone
+		set firewall.vpn.name='vpn'
+		set firewall.vpn.input='ACCEPT'
+		set firewall.vpn.forward='ACCEPT'
+		set firewall.vpn.output='ACCEPT'
+		set firewall.vpn.masq='1'
+		set firewall.vpn.network='vpn0'
+	EOF
+fi
+
+if ! uci -q get firewall.vpntowan >/dev/null; then
+	uci -q batch <<-EOF
+		set firewall.vpntowan=forwarding
+		set firewall.vpntowan.src='vpn'
+		set firewall.vpntowan.dest='wan'
+	EOF
+fi
+
+if ! uci -q get firewall.vpntolan >/dev/null; then
+	uci -q batch <<-EOF
+		set firewall.vpntolan=forwarding
+		set firewall.vpntolan.src='vpn'
+		set firewall.vpntolan.dest='lan'
+	EOF
+fi
+
+if ! uci -q get firewall.lantovpn >/dev/null; then
+	uci -q batch <<-EOF
+		set firewall.lantovpn=forwarding
+		set firewall.lantovpn.src='lan'
+		set firewall.lantovpn.dest='vpn'
+	EOF
+fi
+
+uci -q commit firewall
+
+# 收紧库存脚本的 0777；文件不存在就跳过，不要创建。
+if [ -f /etc/openvpn/server/checkpsw.sh ]; then
+	chmod 0755 /etc/openvpn/server/checkpsw.sh
+fi
+
+# 按服务端是否启用来开关 WAN 放行（未启用则关掉旧固件留下的无条件 ACCEPT）。
+if [ -x /usr/libexec/ryan-openvpn-wan-fw ]; then
+	/usr/libexec/ryan-openvpn-wan-fw sync
+fi
+
+if [ -x /etc/init.d/ryan-openvpn-wan-fw ]; then
+	/etc/init.d/ryan-openvpn-wan-fw enable
+fi
+
+rm -f /tmp/luci-indexcache
+exit 0

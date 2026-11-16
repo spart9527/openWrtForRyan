@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+# 开机按 UCI 同步 WAN 放行：保留配置升级后若 OpenVPN 服务端仍启用，重启后要重新打开端口。
+# uci-defaults 只在每版镜像首次启动跑一次，不能只靠它。
+# START 放在 openvpn（90）之后。stop 什么都不做：关的是本辅助脚本，不是 OpenVPN；
+# 停 OpenVPN 由 hotplug down 关洞。
+
+START=91
+STOP=15
+
+start() {
+	[ -x /usr/libexec/ryan-openvpn-wan-fw ] && /usr/libexec/ryan-openvpn-wan-fw sync
+}
+
+stop() {
+	return 0
+}

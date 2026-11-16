@@ -1,0 +1,9 @@
+#!/bin/sh
+# 官方 openvpn 包在 script-security>=2 时会调用 /usr/libexec/openvpn-hotplug，
+# 再转到 /etc/hotplug.d/openvpn/。这里只处理服务端实例的 up/down。
+[ -x /usr/libexec/ryan-openvpn-wan-fw ] || exit 0
+case "$ACTION" in
+	up)   /usr/libexec/ryan-openvpn-wan-fw up "$INSTANCE" ;;
+	down) /usr/libexec/ryan-openvpn-wan-fw down "$INSTANCE" ;;
+esac
+exit 0

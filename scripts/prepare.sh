@@ -138,6 +138,51 @@ if grep -qx $'\t\tdef_bool n' <(grep -A1 $'^\tconfig IPV6$' config/Config-build.
   exit 1
 fi
 
+# 去掉 OpenVPN 软件包带的演示密码文件，避免它进入公开 Release。
+# files/ 叠加层不能删除打包文件；这里从包源删，并在 prepare_rootfs 里再删一次、做断言。
+# 不要在仓库里写入演示口令或拿口令做比对。
+echo "==> strip OpenVPN demo password file from package source"
+for d in \
+	feeds/kiddin9/luci-app-openvpn-server-client \
+	feeds/kiddin9/luci-app-openvpn-server \
+	package/feeds/kiddin9/luci-app-openvpn-server-client \
+	package/feeds/kiddin9/luci-app-openvpn-server
+do
+	[ -d "$d" ] || continue
+	rm -f "$d/root/etc/openvpn/server/psw-file"
+done
+# 用命令替换而不是 find | grep -q：set -o pipefail 下 grep -q 提前退出会让 find 收到 SIGPIPE，
+# 管道整体返回非零，反而跳过这个检查。
+if [ -n "$(find feeds/kiddin9/luci-app-openvpn-server-client \
+	feeds/kiddin9/luci-app-openvpn-server \
+	-name psw-file 2>/dev/null || true)" ]
+then
+	echo "ERROR: OpenVPN demo psw-file still present in package source" >&2
+	find feeds/kiddin9/luci-app-openvpn-server-client feeds/kiddin9/luci-app-openvpn-server -name psw-file >&2
+	exit 1
+fi
+
+if [ -f include/rootfs.mk ] && ! grep -q 'ryan-strip-openvpn-demo' include/rootfs.mk; then
+	echo "==> hook prepare_rootfs to drop demo OpenVPN files and reject placeholder config"
+	# $(call mklibs,$(1)) 在 include/rootfs.mk 的 prepare_rootfs 里只出现一次
+	awk '
+		/\$\(call mklibs,\$\(1\)\)/ && !done {
+			print
+			print "\t# ryan-strip-openvpn-demo"
+			print "\t@rm -f $(1)/etc/openvpn/server/psw-file"
+			print "\t@if grep -qF myserver.f3322.net $(1)/etc/config/openvpn $(1)/etc/uci-defaults/openvpn 2>/dev/null; then echo \"ERROR: demo OpenVPN DDNS still present in image\" >&2; exit 1; fi"
+			print "\t@if grep -qE \"192\\\\.168\\\\.9\\\\.(0|1)\" $(1)/etc/config/openvpn $(1)/etc/uci-defaults/openvpn 2>/dev/null; then echo \"ERROR: demo OpenVPN 192.168.9.0/24 route still present in image\" >&2; exit 1; fi"
+			done=1
+			next
+		}
+		{ print }
+	' include/rootfs.mk > include/rootfs.mk.ryan && mv include/rootfs.mk.ryan include/rootfs.mk
+	grep -q 'ryan-strip-openvpn-demo' include/rootfs.mk || {
+		echo "ERROR: failed to hook include/rootfs.mk" >&2
+		exit 1
+	}
+fi
+
 echo "==> make defconfig"
 make defconfig
 
