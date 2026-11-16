@@ -38,7 +38,7 @@ on:
         options: [ext4, squashfs]
         default: ext4
       ipv6:
-        description: "是否编译并启用 IPv6。默认关闭。选 off 会从内核和软件包去掉 IPv6，刷机后也会清除现有的 wan6、LAN IPv6 和 DHCPv6 配置。选 on 则保留 OpenWrt 默认的 IPv6 能力。"
+        description: "是否编译并启用 IPv6。默认关闭。选 off 不装 IPv6 拨号和隧道组件，刷机后清除现有的 wan6、LAN IPv6 和 DHCPv6 配置（内核仍保留 IPv6，firewall4 需要它）。选 on 则保留 OpenWrt 默认的 IPv6 能力。"
         type: choice
         options: [off, on]
         default: off

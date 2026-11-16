@@ -124,35 +124,18 @@ find "devices/x86_64/patches" -maxdepth 1 -type f -name '*.patch' ! -name '*.rev
   | sort -z \
   | xargs -0 -r -n 1 -I % sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 -i '%' || true"
 
-# OpenWrt 25.12 把 CONFIG_IPV6 做成无提示的 def_bool y，
-# .config 里的 "# CONFIG_IPV6 is not set" 会被 make defconfig 丢掉。
-# 关闭 IPv6 时先把默认改成 n，关闭才会生效。
-. files/etc/ryan-build.conf
-if [ "$IPV6" = off ]; then
-  echo "==> patch Config-build.in so IPV6 can be disabled"
-  if [ ! -f config/Config-build.in ]; then
-    echo "ERROR: config/Config-build.in missing, cannot disable IPv6" >&2
-    exit 1
-  fi
-  ipv6_hdr=$'\tconfig IPV6'
-  ipv6_y=$'\t\tdef_bool y'
-  ipv6_n=$'\t\tdef_bool n'
-  ipv6_block="$(grep -A1 "^${ipv6_hdr}$" config/Config-build.in || true)"
-  if printf '%s\n' "$ipv6_block" | grep -qx "$ipv6_n"; then
-    echo "==> IPV6 already def_bool n"
-  elif printf '%s\n' "$ipv6_block" | grep -qx "$ipv6_y"; then
-    sed -i "/^${ipv6_hdr}$/{n;s/^${ipv6_y}$/${ipv6_n}/;}" config/Config-build.in
-    ipv6_block="$(grep -A1 "^${ipv6_hdr}$" config/Config-build.in || true)"
-    if ! printf '%s\n' "$ipv6_block" | grep -qx "$ipv6_n"; then
-      echo "ERROR: failed to patch CONFIG_IPV6 default in config/Config-build.in" >&2
-      grep -n -A2 'config IPV6' config/Config-build.in >&2 || true
-      exit 1
-    fi
-  else
-    echo "ERROR: unexpected IPV6 block in config/Config-build.in" >&2
-    grep -n -A2 'config IPV6' config/Config-build.in >&2 || true
-    exit 1
-  fi
+# IPV6=off 不再改 config/Config-build.in 去关 CONFIG_IPV6：
+# OpenWrt 25.12 的 CONFIG_IPV6 是 def_bool y，且 CONFIG_KERNEL_IPV6 跟着它走。
+# kiddin9 的 firewall4 依赖 +ip6tables（ip6tables-* 是 @IPV6），关掉后 make defconfig
+# 会去掉 firewall4，连带 luci / luci-light（depends on firewall||firewall4）、
+# luci-mod-admin-full 和 luci-mod-network/status/system 一起掉。就算把依赖改掉，
+# 没有内核 IPv6 时 nf_tables 的 inet 表（NF_TABLES_INET depends on IPV6）也不可用，
+# fw4 的 "table inet fw4" 起不来，路由器就没有防火墙和 NAT。
+# 所以 IPV6=off 时保留内核 IPv6，只去掉 IPv6 拨号/隧道组件，开机由 99-ryan-home 清掉
+# wan6 / LAN IPv6 / DHCPv6。
+if grep -qx $'\t\tdef_bool n' <(grep -A1 $'^\tconfig IPV6$' config/Config-build.in 2>/dev/null); then
+  echo "ERROR: config/Config-build.in has IPV6 def_bool n; firewall4/LuCI would be dropped" >&2
+  exit 1
 fi
 
 echo "==> make defconfig"
@@ -214,17 +197,10 @@ else
     exit 1
   fi
 fi
+# 两种选项都必须保留 CONFIG_IPV6=y：firewall4 需要内核 IPv6（见上面的说明）
+require_config 'CONFIG_IPV6=y'
+require_config 'CONFIG_PACKAGE_firewall4=y'
 if [ "$IPV6" = off ]; then
-  if grep -qx 'CONFIG_IPV6=y' .config; then
-    echo "ERROR: IPV6=off but CONFIG_IPV6=y is still enabled" >&2
-    grep -E '^CONFIG_IPV6' .config >&2 || true
-    exit 1
-  fi
-  if grep -qx 'CONFIG_KERNEL_IPV6=y' .config; then
-    echo "ERROR: IPV6=off but CONFIG_KERNEL_IPV6=y is still enabled" >&2
-    grep -E '^CONFIG_KERNEL_IPV6' .config >&2 || true
-    exit 1
-  fi
   for p in odhcp6c ipv6helper 6in4 6rd 6to4 ds-lite; do
     if grep -qE "^CONFIG_PACKAGE_${p}=[ym]" .config; then
       echo "ERROR: IPV6=off but $p is still enabled" >&2
@@ -232,8 +208,6 @@ if [ "$IPV6" = off ]; then
       exit 1
     fi
   done
-else
-  require_config 'CONFIG_IPV6=y'
 fi
 if [ "$REMOVE_AUTHOR_LINKS" = yes ]; then
   if grep -qE '^CONFIG_VERSION_HOME_URL="https?://' .config; then
@@ -258,6 +232,48 @@ fi
 for p in $(grep -E '^CONFIG_PACKAGE_' build-options.config | sed 's/^CONFIG_PACKAGE_\(.*\)=y$/\1/'); do
   require_config "CONFIG_PACKAGE_${p}=y"
 done
+
+# 必须编进去的包：少一个就不出固件，免得刷完没有后台或少了在用的功能
+must_have="luci-base luci-app-firewall luci-mod-network luci-mod-status luci-mod-system luci-app-openvpn-server-client luci-app-upnp"
+if [ "$WEB_SERVER" = uhttpd ]; then
+  must_have="$must_have luci luci-light luci-mod-admin-full uhttpd"
+else
+  must_have="$must_have luci-nginx"
+fi
+case "$INTERNET" in
+  none) ;;
+  *) must_have="$must_have luci-app-${INTERNET} smartdns" ;;
+esac
+missing=""
+for p in $must_have; do
+  grep -qx "CONFIG_PACKAGE_${p}=y" .config || missing="$missing $p"
+done
+if [ -n "$missing" ]; then
+  echo "ERROR: must-have packages missing from .config:$missing" >&2
+  for p in $missing; do
+    grep -E "^(# )?CONFIG_PACKAGE_${p}[= ]" .config >&2 || echo "  (CONFIG_PACKAGE_${p} not in .config)" >&2
+  done
+  exit 1
+fi
+# packages.txt 里的顶层包也必须编进去。下面几个在 Kwrt 25.12 x86 上本来就编不了
+# （源里没有，或依赖 PWM_SUPPORT），之前的成功编译里也没有，只警告。
+not_on_x86=" luci-app-turboacc luci-app-adbyby-plus luci-app-fan "
+missing=""
+while IFS= read -r pkg || [ -n "$pkg" ]; do
+  pkg="${pkg%%#*}"
+  pkg="$(printf '%s' "$pkg" | tr -d '[:space:]\r')"
+  [ -z "$pkg" ] && continue
+  grep -qx "CONFIG_PACKAGE_${pkg}=y" .config && continue
+  case "$not_on_x86" in
+    *" $pkg "*) echo "WARN: packages.txt entry $pkg is not available on x86, skipped" >&2 ;;
+    *) missing="$missing $pkg" ;;
+  esac
+done < "$ROOT/packages.txt"
+if [ -n "$missing" ]; then
+  echo "ERROR: packages.txt entries not built in:$missing" >&2
+  exit 1
+fi
+echo "==> must-have packages OK:$must_have"
 
 echo "==> enabled extra luci apps:"
 grep -E '^CONFIG_PACKAGE_luci-app-.*=y' .config | sort
