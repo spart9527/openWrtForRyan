@@ -65,18 +65,18 @@ for p in $EXTRA_PACKAGES; do
   [[ "$p" =~ ^[A-Za-z0-9._+-]+$ ]] || fail "EXTRA_PACKAGES 里有非法包名: $p"
 done
 
-# 互联网组件：选客户端后把对应包编进固件。smartdns 随非 none 的选项一起带上。
+# 互联网组件：选客户端后把对应包编进固件。smartdns 及其 LuCI 页面 luci-app-smartdns 随非 none 的选项一起带上。
 # passwall 额外带上现机在用的依赖，刷完即可用。
 internet_packages() {
   case "$INTERNET" in
     none) return 0 ;;
     passwall)
-      printf '%s' "luci-app-passwall smartdns chinadns-ng haproxy sing-box shadowsocks-rust-sslocal shadowsocksr-libev-ssr-local shadowsocksr-libev-ssr-redir simple-obfs-client v2ray-plugin geoview dns2socks ipt2socks microsocks tcping"
+      printf '%s' "luci-app-passwall smartdns luci-app-smartdns chinadns-ng haproxy sing-box shadowsocks-rust-sslocal shadowsocksr-libev-ssr-local shadowsocksr-libev-ssr-redir simple-obfs-client v2ray-plugin geoview dns2socks ipt2socks microsocks tcping"
       ;;
-    passwall2) printf '%s' "luci-app-passwall2 smartdns" ;;
-    openclash) printf '%s' "luci-app-openclash smartdns" ;;
-    homeproxy) printf '%s' "luci-app-homeproxy smartdns" ;;
-    ssr-plus) printf '%s' "luci-app-ssr-plus smartdns" ;;
+    passwall2) printf '%s' "luci-app-passwall2 smartdns luci-app-smartdns" ;;
+    openclash) printf '%s' "luci-app-openclash smartdns luci-app-smartdns" ;;
+    homeproxy) printf '%s' "luci-app-homeproxy smartdns luci-app-smartdns" ;;
+    ssr-plus) printf '%s' "luci-app-ssr-plus smartdns luci-app-smartdns" ;;
   esac
 }
 

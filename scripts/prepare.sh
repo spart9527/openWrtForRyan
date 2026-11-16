@@ -338,7 +338,7 @@ else
 fi
 case "$INTERNET" in
   none) ;;
-  *) must_have="$must_have luci-app-${INTERNET} smartdns" ;;
+  *) must_have="$must_have luci-app-${INTERNET} smartdns luci-app-smartdns" ;;
 esac
 missing=""
 for p in $must_have; do
