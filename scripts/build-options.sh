@@ -48,7 +48,8 @@ esac
 if [ -n "$SIGNATURE" ]; then
   [ "${#SIGNATURE}" -le 40 ] || fail "SIGNATURE 太长（最多 40 字符）"
   printf '%s' "$SIGNATURE" | grep -qE '[$`\\;|&<>"/'\'']' && fail "SIGNATURE 含有非法字符: $SIGNATURE"
-  printf '%s' "$SIGNATURE" | grep -q $'\n' && fail "SIGNATURE 不能换行"
+  # 不能用 grep -q $'\n'：换行会被 grep 当成空模式，任何非空签名都会误报
+  case "$SIGNATURE" in *$'\n'*|*$'\r'*) fail "SIGNATURE 不能换行" ;; esac
 fi
 if [ "$WAN_PORT" != auto ]; then
   [[ "$WAN_PORT" =~ ^eth[0-9]+$ ]] || fail "WAN_PORT 应为 ethN 或 auto: $WAN_PORT"
@@ -100,25 +101,36 @@ CONF
 sed -i "s/10\.0\.0\.1/$LAN_IP/g; s/192\.168\.1\.1/$LAN_IP/g" package/base-files/files/bin/config_generate || true
 
 # ---- 版本签名、作者外链（登录横幅 / os-release / LuCI 主页链接）----
+# 注意：package/base-files/files/etc/os-release 是指向 ../usr/lib/os-release 的符号链接。
+# 以前直接 sed -i 它，GNU sed 会把链接换成普通文件：真正进固件的 /usr/lib/os-release
+# 没改到（LuCI“固件版本”读的就是它的 OPENWRT_RELEASE，所以还显示 by Kiddin'），
+# 而 /etc/os-release 变成了没替换占位符的模板。现在一律 --follow-symlinks，并改实际文件。
+osr=package/base-files/files/etc/os-release
+if [ -e package/base-files/files/usr/lib/os-release ] && [ ! -L "$osr" ]; then
+  ln -sfn ../usr/lib/os-release "$osr"
+fi
 apply_text() {
   local f="$1"
   [ -f "$f" ] || return 0
   if [ -n "$SIGNATURE" ]; then
     if grep -q "by Kiddin'" "$f"; then
-      sed -i "s/by Kiddin'/by $SIGNATURE/g" "$f"
+      sed --follow-symlinks -i "s/by Kiddin'/by $SIGNATURE/g" "$f"
     elif grep -q '%C"' "$f" && ! grep -q "by $SIGNATURE" "$f"; then
-      sed -i "s#%C\"#%C by $SIGNATURE\"#" "$f"
+      sed --follow-symlinks -i "s#%C\"#%C by $SIGNATURE\"#" "$f"
     fi
   else
-    sed -i "s/ by Kiddin'//g" "$f"
+    sed --follow-symlinks -i "s/ by Kiddin'//g" "$f"
   fi
   if [ "$REMOVE_AUTHOR_LINKS" = yes ]; then
-    sed -i -e 's#https://openwrt.ai/##g' -e 's#https://openwrt.ai##g' "$f"
+    sed --follow-symlinks -i -e 's#https://openwrt.ai/##g' -e 's#https://openwrt.ai##g' "$f"
   fi
 }
-apply_text package/base-files/files/etc/os-release
+apply_text package/base-files/files/usr/lib/os-release
 apply_text package/base-files/files/etc/banner
 apply_text files/etc/banner
+# Kwrt 的横幅在 diy/ 里（"%D %C by Kiddin'"），prepare.sh 稍后会执行 cp -Rf ./diy/* ./
+# 把它盖到 package/base-files 上，所以源头也要改，否则前面的修改会被覆盖。
+apply_text diy/package/base-files/files/etc/banner
 apply_text devices/common/diy/package/base-files/files/etc/banner
 
 # ---- Web 服务器、文件系统、IPv6、互联网组件、外链 ----
