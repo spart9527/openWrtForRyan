@@ -221,16 +221,26 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: openwrt/dl
-          key: x86_64-dl-v2-${{ hashFiles('packages.txt') }}
+          # v3：v2 的 dl 缓存含 go-mod-cache，配合旧的小文件清理会还原出残缺的 Go 模块，弃用。
+          key: x86_64-dl-v3-${{ hashFiles('packages.txt') }}
           restore-keys: |
-            x86_64-dl-v2-
+            x86_64-dl-v3-
 
       - name: Download sources
         run: |
           mkdir -p openwrt/.ccache openwrt/.go-cache openwrt/dl
           cd openwrt
+          # Go 模块缓存（GOMODCACHE=dl/go-mod-cache）随 dl 缓存保存。已解压的模块目录不会被
+          # Go 重新校验，缺文件只会在编译时报错；这里删掉解压目录，只留 cache/download 里的
+          # zip，编译时 Go 会按 go.sum 校验 zip 后重新解压，坏缓存无法混进来。
+          if [ -d dl/go-mod-cache ]; then
+            chmod -R u+w dl/go-mod-cache 2>/dev/null || true
+            find dl/go-mod-cache -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} + || true
+          fi
           make download -j8 || make download -j1 V=s
-          find dl -size -1024c -exec rm -f {} \; || true
+          # 只清理下载失败留下的小文件（<1 KiB）。必须跳过 go-mod-cache：里面有大量合法的小文件
+          # （如 protobuf 的 editions_defaults.binpb 只有 154 字节），误删会导致 Go 包编译失败。
+          find dl -path dl/go-mod-cache -prune -o -type f -size -1024c -print -exec rm -f {} + || true
           echo "==> cache dir sizes before compile:"
           du -sh .ccache .go-cache dl dl/go-mod-cache \
             staging_dir/host staging_dir/hostpkg staging_dir/toolchain-* \
@@ -304,6 +314,8 @@ jobs:
           prune_old "x86_64-gocache-" 0
           # 工具链只保留最近 2 个 v2（通常只有当前哈希）
           prune_old "x86_64-toolchain-v2-" 2
+          # dl 已升到 v3，v2 的条目（含残缺风险的 go-mod-cache）不再使用，全部清掉
+          prune_old "x86_64-dl-v2-" 0
           # 旧的、键里带 packages.txt 哈希的工具链缓存可以清掉
           # 注意：不要用前缀 x86_64-toolchain-（会连 v2 一起匹配）。逐条判断。
           mapfile -t tcs < <(gh cache list --key "x86_64-toolchain-" --limit 100 --json id,key --jq '.[] | "\(.id)\t\(.key)"')
@@ -337,7 +349,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: openwrt/dl
-          key: x86_64-dl-v2-${{ hashFiles('packages.txt') }}
+          key: x86_64-dl-v3-${{ hashFiles('packages.txt') }}
 
       - name: Collect artifacts
         run: |
