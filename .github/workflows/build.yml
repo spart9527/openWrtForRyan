@@ -79,6 +79,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -143,7 +144,23 @@ jobs:
           rm -rf openwrt/build_dir
           ln -s /mnt/openwrt/build_dir openwrt/build_dir
 
+      - name: Set Go build cache dir
+        run: |
+          # golang-package.mk 会 unexport GOCACHE，必须以 CONFIG_GOLANG_BUILD_CACHE_DIR 为准。
+          # 写成绝对路径，避免 kconfig 把 $(TOPDIR) 存乱。
+          # 放在工具链缓存和 stamp 刷新之前：tmp/.build 依赖 .config，之后再改 .config
+          # 会让 tmp/.build 变新，tools/toolchain 的 stamp 又被判过期。
+          mkdir -p openwrt/.ccache openwrt/.go-cache openwrt/dl
+          abs="$GITHUB_WORKSPACE/openwrt/.go-cache"
+          if grep -q '^CONFIG_GOLANG_BUILD_CACHE_DIR=' openwrt/.config 2>/dev/null; then
+            sed -i 's|^CONFIG_GOLANG_BUILD_CACHE_DIR=.*|CONFIG_GOLANG_BUILD_CACHE_DIR="'"$abs"'"|' openwrt/.config
+          else
+            echo "CONFIG_GOLANG_BUILD_CACHE_DIR=\"$abs\"" >> openwrt/.config
+          fi
+          grep '^CONFIG_GOLANG_BUILD_CACHE_DIR=' openwrt/.config || true
+
       - name: Cache toolchain
+        id: cache-toolchain
         uses: actions/cache@v4
         with:
           path: |
@@ -152,38 +169,175 @@ jobs:
             openwrt/staging_dir/toolchain-*
             openwrt/build_dir/host
             openwrt/build_dir/hostpkg
-          key: x86_64-toolchain-${{ hashFiles('packages.txt', 'extra.config') }}
+            openwrt/build_dir/toolchain-*
+          key: x86_64-toolchain-v2-${{ hashFiles('openwrt/tools/**', 'openwrt/toolchain/**', 'extra.config') }}
           restore-keys: |
-            x86_64-toolchain-
+            x86_64-toolchain-v2-
 
-      - name: Cache ccache
-        uses: actions/cache@v4
+      - name: Refresh toolchain stamps on exact cache hit
+        if: steps.cache-toolchain.outputs.cache-hit == 'true'
+        run: |
+          # 精确命中说明 tools/toolchain 源与 extra.config 未变。
+          # 刚 clone 的源码时间戳比缓存里的 stamp 新，make 会当成过期并重编。
+          # 做法有据：OpenWrt 官方 CI 的 scripts/ext-tools.sh 靠刷新 stamp 跳过预编译工具的重编；
+          # 主线 commit c459c71（PR #25626）改用 touch -r 临时文件，带上亚秒时间戳，
+          # 且晚于源码检出，避免 timestamp.pl 的小数秒比较仍判定源码更新。
+          # 社区常见写法（OpenWrt 论坛及多份 Actions 配置）还会 touch
+          # staging_dir/{host,hostpkg,toolchain-*}/stamp 与 build_dir 下的 .built* / .prepared* / .configured*。
+          # 只在 cache-hit==true 时做。restore-keys 部分命中可能源已变，交给 make 决定是否重编。
+          set -euo pipefail
+          cd openwrt
+          ref=$(mktemp)
+          # 某个目录不存在时 find 返回非零；pipefail 下不能让它把整步弄失败。
+          { find staging_dir/host staging_dir/hostpkg staging_dir/toolchain-* \
+               build_dir/host build_dir/hostpkg build_dir/toolchain-* \
+            \( -path '*/stamp/*' -o -name '.built*' -o -name '.configured*' -o -name '.prepared*' \) \
+            -type f -print0 2>/dev/null || true; } | xargs -0 -r touch -r "$ref"
+          mkdir -p tmp
+          touch -r "$ref" tmp/.build
+          rm -f "$ref"
+          echo "Refreshed tools/toolchain stamps (exact cache hit)"
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: openwrt/.ccache
-          key: x86_64-ccache-${{ github.run_id }}
+          key: x86_64-ccache-v2
           restore-keys: |
+            x86_64-ccache-v2
             x86_64-ccache-
+
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: openwrt/.go-cache
+          key: x86_64-gocache-v2
+          restore-keys: |
+            x86_64-gocache-v2
+            x86_64-gocache-
+
+      - name: Restore dl cache
+        id: cache-dl
+        uses: actions/cache/restore@v4
+        with:
+          path: openwrt/dl
+          key: x86_64-dl-v2-${{ hashFiles('packages.txt') }}
+          restore-keys: |
+            x86_64-dl-v2-
 
       - name: Download sources
         run: |
+          mkdir -p openwrt/.ccache openwrt/.go-cache openwrt/dl
           cd openwrt
           make download -j8 || make download -j1 V=s
           find dl -size -1024c -exec rm -f {} \; || true
+          echo "==> cache dir sizes before compile:"
+          du -sh .ccache .go-cache dl dl/go-mod-cache \
+            staging_dir/host staging_dir/hostpkg staging_dir/toolchain-* \
+            build_dir/host build_dir/hostpkg build_dir/toolchain-* 2>/dev/null || true
+          # dl/ 只在体积可控时保存，避免挤占 10 GB 配额（优先保工具链和 ccache）
+          dl_mb=$(du -sm dl | awk '{print $1}')
+          if [ "$dl_mb" -le 1536 ]; then
+            echo "SAVE_DL=true" >> "$GITHUB_ENV"
+            echo "dl/ is ${dl_mb}MB, will save dl cache"
+          else
+            echo "SAVE_DL=false" >> "$GITHUB_ENV"
+            echo "dl/ is ${dl_mb}MB, skip saving dl cache to protect 10GB quota"
+          fi
 
       - name: Compile
         id: compile
         run: |
           df -hT
           cd openwrt
-          ccache -M 3G -d .ccache >/dev/null 2>&1 || true
+          # 路径必须是 .ccache，与 rules.mk 默认 CCACHE_DIR=$(TOPDIR)/.ccache 一致。
+          # 不要在这里 export CCACHE_NOCOMPRESS / CCACHE_DIR / CCACHE_BASEDIR，交给 OpenWrt。
+          # 不要设置 CCACHE_NOHASHDIR / CCACHE_HASHDIR（见上游 PR #20317）。
+          ccache -d .ccache -M 8G
+          ccache -d .ccache -o sloppiness=time_macros,include_file_mtime,include_file_ctime
+          ccache -d .ccache -o compiler_check=content
+          echo "==> ccache stats before compile"
+          ccache -s -d .ccache || true
           make -j$(($(nproc)+1)) || {
             log=$(mktemp)
             make -j1 V=s >"$log" 2>&1 || true
             tail -n 80 "$log"
             exit 1
           }
+          echo "==> ccache stats after compile"
           ccache -s -d .ccache || true
           df -hT
+
+      - name: Delete previous fixed cache keys
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # 固定键已存在时 actions/cache/save 会拒绝写入。此处只删即将覆盖的固定键，
+          # 以及本前缀下明显过期的 run_id 旧条目。失败不让整次编译失败。
+          set +e
+          gh cache delete x86_64-ccache-v2 || true
+          gh cache delete x86_64-gocache-v2 || true
+          # 清掉改为固定键之前、按 run_id 堆积的旧 ccache（保留前缀匹配到的最新 1 个以防万一）
+          prune_old() {
+            prefix="$1"
+            keep="$2"
+            mapfile -t rows < <(gh cache list --key "$prefix" --sort last_accessed_at --order desc --limit 100 --json id,key --jq '.[] | "\(.id)\t\(.key)"')
+            echo "Caches with prefix $prefix:"
+            printf '%s\n' "${rows[@]}"
+            idx=0
+            for row in "${rows[@]}"; do
+              id="${row%%$'\t'*}"
+              key="${row#*$'\t'}"
+              idx=$((idx + 1))
+              if [ "$idx" -le "$keep" ]; then
+                echo "keep $key ($id)"
+                continue
+              fi
+              echo "delete $key ($id)"
+              gh cache delete "$id" || true
+            done
+          }
+          # 固定键刚删掉，这里 keep=0 会清掉其余 x86_64-ccache-* / x86_64-gocache-* 旧条目
+          prune_old "x86_64-ccache-" 0
+          prune_old "x86_64-gocache-" 0
+          # 工具链只保留最近 2 个 v2（通常只有当前哈希）
+          prune_old "x86_64-toolchain-v2-" 2
+          # 旧的、键里带 packages.txt 哈希的工具链缓存可以清掉
+          # 注意：不要用前缀 x86_64-toolchain-（会连 v2 一起匹配）。逐条判断。
+          mapfile -t tcs < <(gh cache list --key "x86_64-toolchain-" --limit 100 --json id,key --jq '.[] | "\(.id)\t\(.key)"')
+          for row in "${tcs[@]}"; do
+            id="${row%%$'\t'*}"
+            key="${row#*$'\t'}"
+            case "$key" in
+              x86_64-toolchain-v2-*) echo "keep toolchain v2 $key" ;;
+              *) echo "delete old toolchain key $key ($id)"; gh cache delete "$id" || true ;;
+            esac
+          done
+          gh cache list --limit 50 || true
+          true
+
+      - name: Save ccache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt/.ccache
+          key: x86_64-ccache-v2
+
+      - name: Save Go build cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt/.go-cache
+          key: x86_64-gocache-v2
+
+      - name: Save dl cache
+        if: success() && env.SAVE_DL == 'true' && steps.cache-dl.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt/dl
+          key: x86_64-dl-v2-${{ hashFiles('packages.txt') }}
 
       - name: Collect artifacts
         run: |
