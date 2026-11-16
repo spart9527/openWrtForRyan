@@ -1,6 +1,6 @@
 #!/bin/sh
 # 一键升级：备份 → 下载最新公开固件 → 保留配置刷入。
-# 重启后 private-packages 服务会自动安装 /root/private-packages.txt。
+# 若固件已编入互联网组件，一般不必再靠私有清单；否则开机后会按 /root/private-packages.txt 补装。
 # 用法：
 #   firmware-upgrade --check
 #   firmware-upgrade
@@ -20,57 +20,76 @@ JSON="$(wget -qO- "$API")" || {
 }
 
 TAG="$(echo "$JSON" | jsonfilter -e '@.tag_name')"
-URL="$(echo "$JSON" | jsonfilter -e '@.assets[*].browser_download_url' | grep -E 'ext4-combined-efi\.img\.gz$' | head -n1)"
-
-if [ -z "$URL" ]; then
-	echo "最新 Release $TAG 里没有 ext4-combined-efi.img.gz"
-	exit 1
-fi
-
 SUMS_URL="$(echo "$JSON" | jsonfilter -e '@.assets[*].browser_download_url' | grep -E '/sha256sums$' | head -n1)"
 OPTS_URL="$(echo "$JSON" | jsonfilter -e '@.assets[*].browser_download_url' | grep -E '/ryan-build\.conf$' | head -n1)"
 
-echo "最新版本: $TAG"
-echo "镜像: $URL"
-
-# 核对这个固件的编译选项，和现机不一致就停下，避免再刷出 LAN 断网/后台 403
+# 先读编译选项，再按 FILESYSTEM 选镜像（ext4 或 squashfs）
 OPTS="/tmp/ryan-build.conf.new"
+FILESYSTEM=ext4
+INTERNET=
 if [ -n "$OPTS_URL" ] && wget -qO "$OPTS" "${PROXY}${OPTS_URL}"; then
 	echo "---- 新固件编译选项 ----"
 	cat "$OPTS"
 	echo "------------------------"
-	( . "$OPTS"
-	  bad=0
-	  cur_ip="$(uci -q get network.lan.ipaddr)"
-	  [ "$LAN_IP" = "$cur_ip" ] || { echo "注意: 新固件 LAN_IP=$LAN_IP，现机是 $cur_ip"; bad=1; }
-	  [ "$WAN_PORT" != auto ] || { echo "注意: WAN_PORT=auto，网口交给 Kwrt 分配（>2 网卡时 eth1 当 WAN）"; bad=1; }
-	  if [ "$WAN_PORT" != auto ] && [ ! -e "/sys/class/net/$WAN_PORT" ]; then
-	    echo "注意: 本机没有 $WAN_PORT"; bad=1
-	  fi
-	  exit $bad ) || {
-		if [ "${FORCE:-0}" != "1" ]; then
-			echo "编译选项和现机不一致，确认没问题再用 FORCE=1 firmware-upgrade"
-			exit 1
-		fi
+	# shellcheck disable=SC1090
+	. "$OPTS"
+	bad=0
+	cur_ip="$(uci -q get network.lan.ipaddr)"
+	[ "$LAN_IP" = "$cur_ip" ] || { echo "注意: 新固件 LAN_IP=$LAN_IP，现机是 $cur_ip"; bad=1; }
+	[ "$WAN_PORT" != auto ] || { echo "注意: WAN_PORT=auto，网口交给 Kwrt 分配（>2 网卡时 eth1 当 WAN）"; bad=1; }
+	if [ "$WAN_PORT" != auto ] && [ ! -e "/sys/class/net/$WAN_PORT" ]; then
+		echo "注意: 本机没有 $WAN_PORT"; bad=1
+	fi
+	cur_fs=ext4
+	if grep -q ' / overlay ' /proc/mounts 2>/dev/null || [ -d /rom/ ]; then
+		cur_fs=squashfs
+	fi
+	[ -z "${FILESYSTEM:-}" ] && FILESYSTEM=ext4
+	[ "$FILESYSTEM" = "$cur_fs" ] || {
+		echo "注意: 新固件文件系统是 $FILESYSTEM，现机是 $cur_fs，换格式会整盘重写分区"
+		bad=1
 	}
+	if [ "${IPV6:-on}" = off ] && uci -q get network.wan6 >/dev/null; then
+		echo "注意: 新固件关闭了 IPv6，刷机后会清除 wan6、LAN IPv6 和 DHCPv6 配置"
+	fi
+	if [ "$bad" != 0 ] && [ "${FORCE:-0}" != "1" ]; then
+		echo "编译选项和现机不一致，确认没问题再用 FORCE=1 firmware-upgrade"
+		exit 1
+	fi
 else
 	echo "警告: Release 里没有 ryan-build.conf（旧版本固件），无法核对编译选项"
 	[ "${FORCE:-0}" = "1" ] || { echo "用 FORCE=1 firmware-upgrade 强制继续"; exit 1; }
 fi
+
+if [ "$FILESYSTEM" = squashfs ]; then
+	imgpat='squashfs-combined-efi.img.gz'
+else
+	imgpat='ext4-combined-efi.img.gz'
+fi
+URL="$(echo "$JSON" | jsonfilter -e '@.assets[*].browser_download_url' | grep -E "${imgpat}$" | head -n1)"
+if [ -z "$URL" ]; then
+	echo "最新 Release $TAG 里没有 $imgpat"
+	exit 1
+fi
+
+echo "最新版本: $TAG"
+echo "镜像: $URL"
 
 if [ "${1:-}" = "--check" ]; then
 	exit 0
 fi
 
 if [ ! -f "$LIST" ]; then
-	echo "警告: 没有 $LIST ，重启后不会自动安装私有插件（PassWall 等会消失）"
-	if [ "${FORCE:-0}" != "1" ]; then
-		echo "先补好清单，或用 FORCE=1 firmware-upgrade 强制继续"
-		exit 1
+	if [ -n "${INTERNET:-}" ] && [ "$INTERNET" != none ]; then
+		echo "注意: 没有 $LIST。新固件已编入互联网组件 $INTERNET，一般不用再补装私有包。"
+	else
+		echo "警告: 没有 $LIST ，重启后不会自动安装私有插件（PassWall 等会消失）"
+		if [ "${FORCE:-0}" != "1" ]; then
+			echo "先补好清单，或用 FORCE=1 firmware-upgrade 强制继续"
+			exit 1
+		fi
 	fi
-fi
-
-if ! sysupgrade -l | grep -qx "$LIST"; then
+elif ! sysupgrade -l | grep -qx "$LIST"; then
 	echo "警告: $LIST 不在 sysupgrade 保留列表里，检查 /etc/sysupgrade.conf"
 fi
 

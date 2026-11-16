@@ -1,5 +1,6 @@
 # Ryan-OpenWrt 顶层包清单（会编进公开镜像）
-# 只写顶层包。不想公开的包放到路由 /root/private-packages.txt，不要写在这里。
+# 只写顶层包。科学上网请用 build.conf 里的 INTERNET 选项编进固件。
+# 其余不想公开的包放到路由 /root/private-packages.txt，不要写在这里。
 
 # --- 网络加速 / 工具 ---
 luci-app-turboacc

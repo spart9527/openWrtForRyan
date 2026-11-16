@@ -1,11 +1,11 @@
 # Ryan-OpenWrt
 
-家用 x86 软路由固件配置。跟踪 [kiddin9/Kwrt](https://github.com/kiddin9/Kwrt) 的 `25.12` 分支，每月 1 号自动编译，插件按 `packages.txt` 打进镜像。
+家用 x86 软路由固件配置。跟踪 [kiddin9/Kwrt](https://github.com/kiddin9/Kwrt) 的 `25.12` 分支，每月 1 号自动编译，插件按 `packages.txt` 和编译选项打进镜像。
 
 ## 固件约定
 
 - 目标：`x86/64` generic
-- 镜像：`*-ext4-combined-efi.img.gz`（EFI + ext4）
+- 镜像：默认 `*-ext4-combined-efi.img.gz`（EFI + ext4）；也可在编译选项里改成 squashfs
 - 分区：内核 16 MiB，根分区 1004 MiB（不要再改）
 - LAN：`192.168.1.1`（可在编译选项里改）
 - SSH：Dropbear 不绑定接口。LAN 没起来时绑定会让 SSH 起不来；公网由防火墙 `wan` input=REJECT 挡住
@@ -13,28 +13,36 @@
 - 网口：默认 `eth0` 做 WAN，其余所有 eth 口做 LAN。多于 2 张网卡时不要把网口交给 Kwrt 分配（它会把 eth1 当 WAN）
 - 拨号：默认 `keep`，升级保留现有 WAN 设置。PPPoE 账号密码不进固件，也不要写进 `build.conf`
 - 主机名：`Ryan-OpenWrt`
+- IPv6：默认关闭。刷机后会清除现有的 `wan6`、LAN IPv6 和 DHCPv6
+- 互联网：默认把 PassWall、SmartDNS 和现机依赖编进固件
+- 后台密码不作为编译选项：仓库和 Release 是公开的，密码不能写进固件。升级会保留现有 `/etc/shadow`，在路由器上改即可
 
 ## 编译选项
 
-默认值在 [`build.conf`](build.conf)。手动跑 Actions 时页面上已预填同样的建议值，改了以页面为准。定时编译和 push 触发的编译直接用 `build.conf`。
+默认值在 [`build.conf`](build.conf)。在 Actions 里 **Run workflow** 时，每一项旁边都有说明，页面上已预填同样的建议值，改了以页面为准。定时编译和 push 触发的编译直接用 `build.conf`。
 
 | 项 | 默认 | 含义 |
 |---|---|---|
-| `LAN_IP` | `192.168.1.1` | 后台地址 |
-| `HOSTNAME` | `Ryan-OpenWrt` | 只在 `build.conf` 里，Actions 页面没有这一项 |
-| `WEB_SERVER` | `uhttpd` | `uhttpd` 或 `nginx` |
+| `LAN_IP` | `192.168.1.1` | 后台地址。刷机后写入，并覆盖你在后台改过的 LAN IP |
+| `HOSTNAME` | `Ryan-OpenWrt` | 主机名。刷机后写入，并覆盖你在后台改过的主机名 |
+| `WEB_SERVER` | `uhttpd` | `uhttpd`（推荐）或 `nginx`（根路径可能 403） |
 | `WAN_PORT` | `eth0` | `eth0`–`eth3`，或 `auto`（不建议） |
 | `LAN_PORTS` | `auto` | 除 WAN 以外的所有 eth 口；也可写成 `eth1 eth2` |
 | `WAN_PROTO` | `keep` | `keep` / `pppoe` / `dhcp`。`pppoe` 只改协议，账号沿用现机 |
-| `EXTRA_PACKAGES` | 空 | 追加到 `packages.txt` 之后。私有包不要写在这里 |
+| `FILESYSTEM` | `ext4` | `ext4`（与现机一致）或 `squashfs`（出厂文件可从 `/rom` 恢复）。换格式会整盘重写分区，不能当普通升级 |
+| `IPV6` | `off` | `off` 从内核和软件包去掉 IPv6，刷机后也会清掉已有 IPv6 配置；`on` 保留默认 IPv6 能力 |
+| `INTERNET` | `passwall` | 科学上网客户端，直接编进固件。`passwall` 含 SmartDNS 及现机依赖；也可选 `passwall2` / `openclash` / `homeproxy` / `ssr-plus` / `none`。不含 WireGuard。节点配置留在路由器上，不进公开镜像 |
+| `SIGNATURE` | 空 | 自定义版本签名，替换 “by Kiddin'”。留空则去掉作者签名 |
+| `REMOVE_AUTHOR_LINKS` | `yes` | 去掉 LuCI 和横幅里指向 openwrt.ai 的主页链接。软件源 `dl.openwrt.ai` 会保留 |
+| `EXTRA_PACKAGES` | 空 | 追加到 `packages.txt` 之后 |
 
-不合法的值会让编译直接失败。选定的值写进固件 `/etc/ryan-build.conf`，并附在 Release 里的同名文件上。开机脚本 `99-ryan-home` 按这个文件写配置，保留配置升级后也会再跑一遍。
+不合法的值会让编译直接失败。选定的值写进固件 `/etc/ryan-build.conf`，并附在 Release 里的同名文件上。开机脚本 `99-ryan-home` 按这个文件写配置，保留配置升级后也会再跑一遍。后台密码不会出现在这个文件里。
 
 ## 改插件
 
-公开镜像里的包写在 [`packages.txt`](packages.txt)。推到 `main` 或在 Actions 里 **Run workflow**。
+公开镜像里的基础包写在 [`packages.txt`](packages.txt)。科学上网相关包由 `INTERNET` 选项编进固件，不必再写进私有清单。推到 `main` 或在 Actions 里 **Run workflow**。
 
-不想出现在 GitHub / Release 里的包，写到路由上的 `/root/private-packages.txt`（一行一个包名）。新固件开机后按清单逐个检查、缺的才装；某个包下架不影响其它包。WAN 每次拨号成功都会再试，直到装齐。一般不用手跑 `install-private-packages`。
+还需要临时或不想公开的包，可以写到路由上的 `/root/private-packages.txt`（一行一个包名）。新固件开机后按清单逐个检查、缺的才装；某个包下架不影响其它包。WAN 每次拨号成功都会再试，直到装齐。默认已经编入 PassWall 和 SmartDNS 时，一般不用再维护这份清单。
 
 不要把 `luci-proto-wireguard`、`wireguard-tools` 放进私有清单：这台机器不用 WireGuard，自编内核也拿不到 `kmod-wireguard`。
 
@@ -44,20 +52,22 @@
 
 1. 仓库地址：https://github.com/spart9527/openWrtForRyan
 2. 打开仓库 **Settings → Actions → General**：允许 workflow，允许 **Read and write** 权限（用来发 Release）。
-3. **Actions → Build x86_64 firmware → Run workflow**。页面上有 6 个选项，已预填建议值。
+3. **Actions → Build x86_64 firmware → Run workflow**。页面上每一项都有说明，并已预填建议值。
 4. 只编进固件的包（已关闭 Kwrt 默认的 `ALL_NONSHARED` / `ALL_KMODS` / ImageBuilder），并缓存 ccache。成功后 Releases 里会有镜像和 `ryan-build.conf`。
 
 定时：每月 1 号 08:00（北京时间）自动编一次。只改 `README.md` 不会触发编译。
 
 ## 固件更新顺序
 
-只刷 **Actions 成功** 后 Releases 里的 `*-ext4-combined-efi.img.gz`。正在跑或已取消的编译不要用。
+只刷 **Actions 成功** 后 Releases 里与本次 `FILESYSTEM` 对应的 `*-combined-efi.img.gz`。正在跑或已取消的编译不要用。
 
-第一次升级前把私有包名放到 `/root/private-packages.txt`（已做过可跳过）。刷之前确认：
+刷之前确认：
 
 ```sh
 sysupgrade -l | grep private-packages
 ```
+
+（若已不再使用私有清单，可跳过。）
 
 **之后每次一键（新固件里）：**
 
@@ -66,7 +76,7 @@ firmware-upgrade --check
 firmware-upgrade
 ```
 
-会先核对新固件的编译选项和现机（LAN IP、WAN 口是否存在）。不一致就停下，确认没问题再用 `FORCE=1 firmware-upgrade`。接着保存 `network` / `dhcp` / `firewall` / `dropbear` 快照，备份到 `/root/backup-latest.tar.gz`，校验 sha256，用 `sysupgrade -T` 预检，再保留配置刷入。设备重启后，开机联网会自动安装私有清单。OpenVPN 已在镜像里。
+会先核对新固件的编译选项和现机（LAN IP、WAN 口是否存在、文件系统是否一致）。不一致就停下，确认没问题再用 `FORCE=1 firmware-upgrade`。若新固件关闭了 IPv6，会提示刷机后将清除 `wan6` 等配置。接着保存 `network` / `dhcp` / `firewall` / `dropbear` 快照，备份到 `/root/backup-latest.tar.gz`，校验 sha256，用 `sysupgrade -T` 预检，再保留配置刷入。PassWall 和 SmartDNS 默认已在镜像里；若仍有私有清单，开机联网后会自动补装。OpenVPN 已在镜像里。
 
 旧固件里的 `firmware-upgrade` 还没有这些检查。第一次请在 LuCI 里上传 Release 的镜像并勾选保留配置，或先把仓库里的 `scripts/router-upgrade.sh` 拷到路由的 `/usr/sbin/firmware-upgrade` 再跑 `--check`。有人在家、能接显示器或笔记本时再刷。
 
@@ -79,7 +89,7 @@ install-private-packages
 
 不要在现机上对 `kmod-*` 做 `opkg upgrade`。内核只通过刷整包固件更新。
 
-网络起不来时：无配置再刷一次，只手工恢复 `network` / `firewall` / `dhcp` / `dropbear`，然后 `install-private-packages`，需要的话从备份取出 OpenVPN 证书。
+网络起不来时：无配置再刷一次，只手工恢复 `network` / `firewall` / `dhcp` / `dropbear`，需要的话从备份取出 OpenVPN 证书。
 
 ## 刷机后自动调优
 
@@ -93,13 +103,15 @@ install-private-packages
 
 ## 刷机后验证
 
-- `cat /etc/ryan-build.conf` 与 Release 说明一致
+- `cat /etc/ryan-build.conf` 与 Release 说明一致（应看到 `IPV6='off'`、`INTERNET='passwall'`、`FILESYSTEM='ext4'`）
+- `opkg status luci-app-passwall` 和 `opkg status smartdns` 显示已安装
+- `uci get network.wan6` 提示 Entry not found
+- 登录横幅和系统信息里没有 “by Kiddin'”，LuCI 里没有指向 openwrt.ai 的主页链接
 - `ip -br link`：插线的口是 UP；`bridge link` 里 `br-lan` 含除 eth0 以外的口
 - `ifstatus wan | grep -E '"up"|"proto"'`：up 为 true，proto 为现有拨号方式
 - SSH 在现机端口上监听
 - 浏览器打开 `http://192.168.1.1/` 直接是 LuCI 登录页
-- `logread -e private-packages` 最后是 `all installed`
-- `uci get dhcp.@dnsmasq[0].port` 为 `0`（私有包装齐之后）
+- `uci get dhcp.@dnsmasq[0].port` 为 `0`（SmartDNS / PassWall 接管 53 之后）
 - `nslookup baidu.com 127.0.0.1` 正常
 - `opkg update` 不再报 core 源 404
 - `/etc/init.d/zram enabled || echo off` 输出 `off`；`uci get firewall.@defaults[0].flow_offloading_hw` 为 `0`
@@ -113,5 +125,5 @@ install-private-packages
 ./scripts/prepare.sh
 cd openwrt
 make -j$(nproc)
-ls bin/targets/x86/64/*ext4-combined-efi.img.gz
+ls bin/targets/x86/64/*-combined-efi.img.gz
 ```

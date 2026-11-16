@@ -168,8 +168,37 @@ if [ -d feeds/kiddin9/net-snmp-ssl ] || [ -d package/feeds/kiddin9/net-snmp-ssl 
   exit 1
 fi
 
-# 按编译选项核对 Web 服务器，避免再出现根路径 403 进不去后台
+# 按编译选项核对 Web 服务器、文件系统、IPv6、互联网组件
 . files/etc/ryan-build.conf
+if [ "$FILESYSTEM" = ext4 ]; then
+  require_config 'CONFIG_TARGET_ROOTFS_EXT4FS=y'
+  if grep -qx 'CONFIG_TARGET_ROOTFS_SQUASHFS=y' .config; then
+    echo "ERROR: FILESYSTEM=ext4 but squashfs is still enabled" >&2
+    exit 1
+  fi
+else
+  require_config 'CONFIG_TARGET_ROOTFS_SQUASHFS=y'
+  if grep -qx 'CONFIG_TARGET_ROOTFS_EXT4FS=y' .config; then
+    echo "ERROR: FILESYSTEM=squashfs but ext4 is still enabled" >&2
+    exit 1
+  fi
+fi
+if [ "$IPV6" = off ]; then
+  if grep -qx 'CONFIG_IPV6=y' .config; then
+    echo "ERROR: IPV6=off but CONFIG_IPV6=y is still enabled" >&2
+    grep -E '^CONFIG_IPV6' .config >&2 || true
+    exit 1
+  fi
+else
+  require_config 'CONFIG_IPV6=y'
+fi
+if [ "$REMOVE_AUTHOR_LINKS" = yes ]; then
+  if grep -qE '^CONFIG_VERSION_HOME_URL="https?://' .config; then
+    echo "ERROR: REMOVE_AUTHOR_LINKS=yes but HOME_URL still set" >&2
+    grep '^CONFIG_VERSION_HOME_URL' .config >&2 || true
+    exit 1
+  fi
+fi
 if [ "$WEB_SERVER" = uhttpd ]; then
   require_config 'CONFIG_PACKAGE_luci=y'
   require_config 'CONFIG_PACKAGE_uhttpd=y'
