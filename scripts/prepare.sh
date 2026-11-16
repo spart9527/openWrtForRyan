@@ -183,6 +183,57 @@ if [ -f include/rootfs.mk ] && ! grep -q 'ryan-strip-openvpn-demo' include/rootf
 	}
 fi
 
+# ---- 作者署名与外链（SIGNATURE / REMOVE_AUTHOR_LINKS，见 build-options.sh）----
+# 2026.11.16-16 实测：LuCI“固件版本”仍带 " by Kiddin'"（来自 /usr/lib/os-release 的 OPENWRT_RELEASE），
+# 概览“系统”卡片底部仍有 固件下载与定制 / 赞助 / 源码与反馈 / TG交流 一行
+# （kiddin9 feed 的 luci-mod-status 10_system.js）。这里改源码，并在 rootfs 再检查一遍。
+author_opts="$(. files/etc/ryan-build.conf; printf '%s|%s' "$SIGNATURE" "$REMOVE_AUTHOR_LINKS")"
+author_sig="${author_opts%%|*}"
+author_links="${author_opts##*|}"
+echo "==> verify signature in base-files (SIGNATURE='${author_sig}')"
+for f in package/base-files/files/usr/lib/os-release package/base-files/files/etc/banner; do
+	[ -f "$f" ] || continue
+	if grep -qF "by Kiddin'" "$f"; then
+		echo "ERROR: $f still contains \"by Kiddin'\"" >&2
+		grep -nF "by Kiddin'" "$f" >&2
+		exit 1
+	fi
+done
+if [ -e package/base-files/files/usr/lib/os-release ] && [ ! -L package/base-files/files/etc/os-release ]; then
+	echo "ERROR: package/base-files/files/etc/os-release is no longer a symlink" >&2
+	exit 1
+fi
+if [ "$author_links" = yes ]; then
+	echo "==> strip Kwrt author links row from LuCI status overview"
+	sys_js="$(find feeds -path '*/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js' -type f 2>/dev/null | sort -u || true)"
+	if [ -z "$sys_js" ]; then
+		echo "ERROR: luci-mod-status 10_system.js not found in feeds" >&2
+		exit 1
+	fi
+	# package/feeds/* 是指向 feeds/* 的链接，同一个文件可能出现两次，脚本对已处理的文件会跳过
+	# shellcheck disable=SC2086
+	python3 "$ROOT/scripts/strip-status-links.py" $sys_js
+fi
+# rootfs 检查：最终镜像里还有 "by Kiddin'" 或（REMOVE_AUTHOR_LINKS=yes 时）作者外链就编译失败
+cp -f "$ROOT/scripts/rootfs-author-check.sh" scripts/ryan-rootfs-author-check.sh
+chmod +x scripts/ryan-rootfs-author-check.sh
+if [ -f include/rootfs.mk ] && ! grep -q 'ryan-rootfs-author-check' include/rootfs.mk; then
+	echo "==> hook prepare_rootfs to check author signature/links in final rootfs"
+	awk '
+		/\$\(call mklibs,\$\(1\)\)/ && !done {
+			print
+			print "\t@bash $(TOPDIR)/scripts/ryan-rootfs-author-check.sh $(1)"
+			done=1
+			next
+		}
+		{ print }
+	' include/rootfs.mk > include/rootfs.mk.ryan && mv include/rootfs.mk.ryan include/rootfs.mk
+	grep -q 'ryan-rootfs-author-check' include/rootfs.mk || {
+		echo "ERROR: failed to hook include/rootfs.mk for author check" >&2
+		exit 1
+	}
+fi
+
 echo "==> make defconfig"
 make defconfig
 
