@@ -13,7 +13,7 @@
 - 网口：默认 `eth0` 做 WAN，其余所有 eth 口做 LAN。多于 2 张网卡时不要把网口交给 Kwrt 分配（它会把 eth1 当 WAN）
 - 拨号：默认 `keep`，升级保留现有 WAN 设置。PPPoE 账号密码不进固件，也不要写进 `build.conf`
 - 主机名：`Ryan-OpenWrt`
-- IPv6：默认关闭。不装 IPv6 拨号/隧道组件，刷机后会清除现有的 `wan6`、LAN IPv6 和 DHCPv6。内核仍保留 IPv6：firewall4 的防火墙表需要它，去掉会连防火墙和 LuCI 后台一起没了
+- IPv6：默认开启，刷机不改现有的 `wan6` 等配置。不用 IPv6 就在路由器上关掉 `wan6`。选 `off` 会不装 IPv6 拨号/隧道组件，并在刷机后清除 `wan6`、LAN IPv6 和 DHCPv6；内核仍保留 IPv6，因为 firewall4 的防火墙表需要它
 - 互联网：默认把 PassWall、SmartDNS 和现机依赖编进固件
 - 后台密码不作为编译选项：仓库和 Release 是公开的，密码不能写进固件。升级会保留现有 `/etc/shadow`，在路由器上改即可
 
@@ -30,7 +30,7 @@
 | `LAN_PORTS` | `auto` | 除 WAN 以外的所有 eth 口；也可写成 `eth1 eth2` |
 | `WAN_PROTO` | `keep` | `keep` / `pppoe` / `dhcp`。`pppoe` 只改协议，账号沿用现机 |
 | `FILESYSTEM` | `ext4` | `ext4`（与现机一致）或 `squashfs`（出厂文件可从 `/rom` 恢复）。换格式会整盘重写分区，不能当普通升级 |
-| `IPV6` | `off` | `off` 不装 IPv6 组件（odhcp6c、ipv6helper、6in4、6rd、6to4、ds-lite），刷机后清掉 `wan6`、LAN IPv6 和 DHCPv6，路由器不再获取或下发 IPv6；内核仍保留 IPv6，因为 firewall4 依赖它。`on` 保留默认 IPv6 能力 |
+| `IPV6` | `on` | `on` 保留默认 IPv6 能力，刷机不改现有 IPv6 配置。`off` 不装 IPv6 组件（odhcp6c、ipv6helper、6in4、6rd、6to4、ds-lite），刷机后清掉 `wan6`、LAN IPv6 和 DHCPv6，路由器不再获取或下发 IPv6；内核仍保留 IPv6，因为 firewall4 依赖它 |
 | `INTERNET` | `passwall` | 科学上网客户端，直接编进固件。`passwall` 含 SmartDNS 及现机依赖；也可选 `passwall2` / `openclash` / `homeproxy` / `ssr-plus` / `none`。不含 WireGuard。节点配置留在路由器上，不进公开镜像 |
 | `SIGNATURE` | 空 | 自定义版本签名，替换 “by Kiddin'”。留空则去掉作者签名 |
 | `REMOVE_AUTHOR_LINKS` | `yes` | 去掉 LuCI 和横幅里指向 openwrt.ai 的主页链接。软件源 `dl.openwrt.ai` 会保留 |
@@ -86,9 +86,8 @@ firmware-upgrade
 
 ## 刷机后验证
 
-- `cat /etc/ryan-build.conf` 与 Release 说明一致（应看到 `IPV6='off'`、`INTERNET='passwall'`、`FILESYSTEM='ext4'`）
+- `cat /etc/ryan-build.conf` 与 Release 说明一致（应看到 `IPV6='on'`、`INTERNET='passwall'`、`FILESYSTEM='ext4'`）
 - `opkg status luci-app-passwall` 和 `opkg status smartdns` 显示已安装
-- `uci get network.wan6` 提示 Entry not found
 - 登录横幅和系统信息里没有 “by Kiddin'”，LuCI 里没有指向 openwrt.ai 的主页链接
 - `ip -br link`：插线的口是 UP；`bridge link` 里 `br-lan` 含除 eth0 以外的口
 - `ifstatus wan | grep -E '"up"|"proto"'`：up 为 true，proto 为现有拨号方式

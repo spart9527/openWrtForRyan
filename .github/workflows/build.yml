@@ -38,10 +38,10 @@ on:
         options: [ext4, squashfs]
         default: ext4
       ipv6:
-        description: "是否编译并启用 IPv6。默认关闭。选 off 不装 IPv6 拨号和隧道组件，刷机后清除现有的 wan6、LAN IPv6 和 DHCPv6 配置（内核仍保留 IPv6，firewall4 需要它）。选 on 则保留 OpenWrt 默认的 IPv6 能力。"
+        description: "是否启用 IPv6。默认 on：保留 OpenWrt 默认的 IPv6 能力，刷机不改现有 wan6 等配置（不想用 IPv6，在路由器上关掉 wan6 即可）。off：不装 IPv6 拨号和隧道组件，并在每次刷机后清除 wan6、LAN IPv6 和 DHCPv6 配置（内核仍保留 IPv6，firewall4 需要它）。"
         type: choice
-        options: [off, on]
-        default: off
+        options: ["on", "off"]
+        default: "on"
       internet:
         description: "科学上网客户端，直接编进固件，刷完即可使用。passwall=PassWall + SmartDNS 及现机依赖（默认）；passwall2、openclash、homeproxy、ssr-plus=其他客户端 + SmartDNS；none=不编入。不含 WireGuard。节点和订阅配置留在路由器上，不会进入公开镜像。"
         type: choice
