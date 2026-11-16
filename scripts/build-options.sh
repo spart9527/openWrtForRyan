@@ -141,6 +141,8 @@ apply_text devices/common/diy/package/base-files/files/etc/banner
     echo "# CONFIG_TARGET_ROOTFS_EXT4FS is not set"
     echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y"
   fi
+  # 仅写入 .config 不够：OpenWrt 25.12 的 CONFIG_IPV6 是无提示 def_bool y，
+  # prepare.sh 会在 make defconfig 前把 Config-build.in 的默认改成 n。
   if [ "$IPV6" = off ]; then
     echo "# CONFIG_IPV6 is not set"
     echo "# CONFIG_PACKAGE_ds-lite is not set"

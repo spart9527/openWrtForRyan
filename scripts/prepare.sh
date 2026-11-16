@@ -124,6 +124,37 @@ find "devices/x86_64/patches" -maxdepth 1 -type f -name '*.patch' ! -name '*.rev
   | sort -z \
   | xargs -0 -r -n 1 -I % sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 -i '%' || true"
 
+# OpenWrt 25.12 把 CONFIG_IPV6 做成无提示的 def_bool y，
+# .config 里的 "# CONFIG_IPV6 is not set" 会被 make defconfig 丢掉。
+# 关闭 IPv6 时先把默认改成 n，关闭才会生效。
+. files/etc/ryan-build.conf
+if [ "$IPV6" = off ]; then
+  echo "==> patch Config-build.in so IPV6 can be disabled"
+  if [ ! -f config/Config-build.in ]; then
+    echo "ERROR: config/Config-build.in missing, cannot disable IPv6" >&2
+    exit 1
+  fi
+  ipv6_hdr=$'\tconfig IPV6'
+  ipv6_y=$'\t\tdef_bool y'
+  ipv6_n=$'\t\tdef_bool n'
+  ipv6_block="$(grep -A1 "^${ipv6_hdr}$" config/Config-build.in || true)"
+  if printf '%s\n' "$ipv6_block" | grep -qx "$ipv6_n"; then
+    echo "==> IPV6 already def_bool n"
+  elif printf '%s\n' "$ipv6_block" | grep -qx "$ipv6_y"; then
+    sed -i "/^${ipv6_hdr}$/{n;s/^${ipv6_y}$/${ipv6_n}/;}" config/Config-build.in
+    ipv6_block="$(grep -A1 "^${ipv6_hdr}$" config/Config-build.in || true)"
+    if ! printf '%s\n' "$ipv6_block" | grep -qx "$ipv6_n"; then
+      echo "ERROR: failed to patch CONFIG_IPV6 default in config/Config-build.in" >&2
+      grep -n -A2 'config IPV6' config/Config-build.in >&2 || true
+      exit 1
+    fi
+  else
+    echo "ERROR: unexpected IPV6 block in config/Config-build.in" >&2
+    grep -n -A2 'config IPV6' config/Config-build.in >&2 || true
+    exit 1
+  fi
+fi
+
 echo "==> make defconfig"
 make defconfig
 
@@ -189,6 +220,18 @@ if [ "$IPV6" = off ]; then
     grep -E '^CONFIG_IPV6' .config >&2 || true
     exit 1
   fi
+  if grep -qx 'CONFIG_KERNEL_IPV6=y' .config; then
+    echo "ERROR: IPV6=off but CONFIG_KERNEL_IPV6=y is still enabled" >&2
+    grep -E '^CONFIG_KERNEL_IPV6' .config >&2 || true
+    exit 1
+  fi
+  for p in odhcp6c ipv6helper 6in4 6rd 6to4 ds-lite; do
+    if grep -qE "^CONFIG_PACKAGE_${p}=[ym]" .config; then
+      echo "ERROR: IPV6=off but $p is still enabled" >&2
+      grep -E "^CONFIG_PACKAGE_${p}=" .config >&2 || true
+      exit 1
+    fi
+  done
 else
   require_config 'CONFIG_IPV6=y'
 fi
