@@ -45,7 +45,7 @@
 
 这台机器不用 WireGuard，也不要把 `luci-proto-wireguard`、`wireguard-tools` 加进固件：自编内核匹配不到现成的 `kmod-wireguard`。
 
-`/root/` 已加入升级保留列表（备份、证书等）。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
+`/root/` 和 `/etc/smartdns/` 已加入升级保留列表：前者存备份、证书等，后者存 SmartDNS 的自定义规则（`custom.conf`，含去广告白名单和 Xbox 国内 CDN 的 `cname`）和 `conf.d/` 里的去广告列表。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
 
 ## GitHub 上编译
 
