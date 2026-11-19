@@ -1,0 +1,11 @@
+#!/bin/sh
+# 首页网速卡片（luci-app-netstat）统计物理 WAN 口：
+# PPPoE + 软件流量卸载时 pppoe-wan 计数会漏掉被卸载的流量，物理口才准。
+# 只在未设置时写入，不覆盖用户在设置页的选择。
+WAN_DEV="$(uci -q get network.wan.device)"
+[ -n "$WAN_DEV" ] || exit 0
+touch /etc/config/netstats
+[ -n "$(uci -q show netstats | grep '=config')" ] || uci -q add netstats config >/dev/null
+[ -n "$(uci -q get netstats.@config[0].prefer)" ] || uci -q set netstats.@config[0].prefer="$WAN_DEV"
+uci -q commit netstats
+exit 0
