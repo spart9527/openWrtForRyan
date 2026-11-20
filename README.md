@@ -54,7 +54,7 @@
 3. **Actions → Build x86_64 firmware → Run workflow**。页面上每一项都有说明，并已预填建议值。
 4. 只编进固件的包（已关闭 Kwrt 默认的 `ALL_NONSHARED` / `ALL_KMODS` / ImageBuilder），并缓存工具链、ccache 和 Go 编译缓存（dl/ 按体积可选）。成功后 Releases 里会有镜像和 `ryan-build.conf`。
 
-目标软件包固定按 `-O2 -pipe` 编译（偏向运行速度，也与现有 ccache 一致）。这个值由 `scripts/prepare.sh` 在每次 `defconfig` 之后写入并检查，不再依赖 Kwrt 的 `diy.sh`。不要改成 `-Os`：优化参数变了之后 ccache 会大面积失效，编译可能从约 2 小时拉长到 5 小时以上。
+目标软件包固定按 `-O2 -pipe` 编译（偏向运行速度，也与现有 ccache 一致）。`scripts/prepare.sh` 会改 `include/target.mk` 里生成默认优化参数的那一行，再跑 `defconfig` 并检查生效值；只往 `.config` 里写会被覆盖。不再依赖 Kwrt 的 `diy.sh`。不要改成 `-Os`：优化参数变了之后 ccache 会大面积失效，编译可能从约 2 小时拉长到 5 小时以上。
 
 定时：每月 1 号 08:00（北京时间）自动编一次。只改 `README.md` 不会触发编译。
 

@@ -105,15 +105,6 @@ apply_home_config() {
     echo "CONFIG_PACKAGE_${pkg}=y" >> .config
   done < "$ROOT/packages.txt"
   cat build-options.config >> .config
-  # 固定目标优化为 -O2 -pipe。Kwrt x86_64/diy.sh 曾把 include/target.mk 里的
-  # -Os 改成 -O2；2026-11-19 起那行被删掉，defconfig 会回到默认 -Os，
-  # ccache 无法复用上次 -O2 的对象文件，编译会从约 2 小时拉长到 5 小时以上。
-  # 写在 extra.config 之外：工具链缓存 key 含 extra.config 的哈希，而这个参数
-  # 只影响目标软件包（rules.mk 的 TARGET_CFLAGS），不影响工具链本身。
-  # 放在本函数末尾，这样两次 defconfig 前后都会再写入；make defconfig 会保留
-  # .config 里已有的字符串值。
-  echo 'CONFIG_TARGET_OPTIMIZATION="-O2 -pipe"' >> .config
-  echo 'CONFIG_DEFAULT_TARGET_OPTIMIZATION="-O2 -pipe"' >> .config
 }
 
 apply_home_config
@@ -243,6 +234,32 @@ if [ -f include/rootfs.mk ] && ! grep -q 'ryan-rootfs-author-check' include/root
 	}
 fi
 
+# 固定目标优化为 -O2 -pipe。Kwrt x86_64/diy.sh 曾把 include/target.mk 里的
+# -Os 改成 -O2；2026-11-19 起那行被删掉，默认回到 -Os。
+# TARGET_OPTIMIZATION 只在 TARGET_OPTIONS 开启时才可被用户设置（固件里这个选项是关的），
+# DEFAULT_TARGET_OPTIMIZATION 没有 prompt，make defconfig 会按 target 元数据重写这两项。
+# 因此不能只改 .config。这里只改 DUMP 段生成默认值的那一行
+# （CPU_CFLAGS = -Os -pipe），与旧 Kwrt 做法同类但范围更窄，loongarch 的
+# “CPU_CFLAGS := -O2 -pipe” 不会被碰到。随后的 defconfig 会据此写出 -O2。
+echo "==> pin include/target.mk CPU_CFLAGS default to -O2 -pipe"
+if [ ! -f include/target.mk ]; then
+  echo "ERROR: include/target.mk missing" >&2
+  exit 1
+fi
+if ! grep -qE '^[[:space:]]*CPU_CFLAGS = -O2 -pipe[[:space:]]*$' include/target.mk; then
+  if grep -qE '^[[:space:]]*CPU_CFLAGS = -Os -pipe[[:space:]]*$' include/target.mk; then
+    sed -i 's/^\([[:space:]]*CPU_CFLAGS = \)-Os -pipe[[:space:]]*$/\1-O2 -pipe/' include/target.mk
+  else
+    echo "ERROR: include/target.mk has no CPU_CFLAGS = -Os -pipe default to pin" >&2
+    grep -n 'CPU_CFLAGS' include/target.mk >&2 || true
+    exit 1
+  fi
+fi
+if ! grep -qE '^[[:space:]]*CPU_CFLAGS = -O2 -pipe[[:space:]]*$' include/target.mk; then
+  echo "ERROR: failed to pin include/target.mk CPU_CFLAGS to -O2 -pipe" >&2
+  exit 1
+fi
+
 echo "==> make defconfig"
 make defconfig
 
@@ -269,6 +286,8 @@ require_config 'CONFIG_TARGET_PROFILE="DEVICE_generic"'
 require_config 'CONFIG_TARGET_KERNEL_PARTSIZE=16'
 echo "==> target optimization:"
 grep -E '^CONFIG_(DEFAULT_)?TARGET_OPTIMIZATION=' .config || true
+# TARGET_OPTIMIZATION 实际进入 rules.mk 的 TARGET_CFLAGS。
+# DEFAULT_TARGET_OPTIMIZATION 无 prompt，不能当作用户可选项写入；它应与上面 pin 后的默认一致。
 require_config 'CONFIG_TARGET_OPTIMIZATION="-O2 -pipe"'
 require_config 'CONFIG_DEFAULT_TARGET_OPTIMIZATION="-O2 -pipe"'
 # 加速：不应再编译整个软件源
