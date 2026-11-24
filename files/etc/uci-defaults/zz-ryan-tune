@@ -15,6 +15,26 @@ set firewall.@defaults[0].flow_offloading='1'
 set firewall.@defaults[0].flow_offloading_hw='0'
 UCI
 
+# iKOOLCORE R2 / N95 四核：预装 irqbalance。镜像默认 enabled=1；
+# 若升级时还没有这份配置（包自带默认是 0），则打开。已有配置不覆盖，方便在 LuCI 里关闭。
+if [ -x /etc/init.d/irqbalance ]; then
+	if [ -z "$(uci -q get irqbalance.irqbalance.enabled)" ]; then
+		uci -q set irqbalance.irqbalance=irqbalance
+		uci -q set irqbalance.irqbalance.enabled='1'
+		uci -q commit irqbalance
+	fi
+	/etc/init.d/irqbalance enable
+	[ "$(uci -q get irqbalance.irqbalance.enabled)" = 1 ] && /etc/init.d/irqbalance start 2>/dev/null
+fi
+
+# 本版不再预装 SmartDNS 及其去广告列表；清掉升级留下的配置和目录。
+# 不碰 luci-app-passwall 自带的 helper_smartdns_add.lua。
+if [ ! -x /etc/init.d/smartdns ]; then
+	rm -f /etc/config/smartdns /etc/config/smartdns-opkg
+	rm -f /etc/config/.smartdns.* 2>/dev/null
+	rm -rf /etc/smartdns
+fi
+
 # 清掉已卸载插件留下的防火墙 include 条目
 for s in dockerd adbyby shadowsocksr passwall2 passwall2_server unblockmusic; do
 	uci -q delete firewall.$s

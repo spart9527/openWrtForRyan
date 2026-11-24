@@ -6,6 +6,8 @@ luci-app-turboacc
 ip-full
 ethtool
 snmpd-nossl
+irqbalance
+luci-app-irqbalance
 
 # --- 广告 / 媒体 ---
 luci-app-adbyby-plus

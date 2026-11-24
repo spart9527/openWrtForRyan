@@ -43,7 +43,7 @@ on:
         options: ["on", "off"]
         default: "on"
       internet:
-        description: "科学上网客户端，直接编进固件，刷完即可使用。passwall=PassWall + SmartDNS（含 LuCI 管理页面）及现机依赖（默认）；passwall2、openclash、homeproxy、ssr-plus=其他客户端 + SmartDNS；none=不编入。不含 WireGuard。节点和订阅配置留在路由器上，不会进入公开镜像。"
+        description: "科学上网客户端，直接编进固件，刷完即可使用。passwall=PassWall 及现机依赖（默认，不含 SmartDNS）；passwall2、openclash、homeproxy、ssr-plus=其他客户端；none=不编入。不含 WireGuard。节点和订阅配置留在路由器上，不会进入公开镜像。"
         type: choice
         options: [passwall, passwall2, openclash, homeproxy, ssr-plus, none]
         default: passwall
