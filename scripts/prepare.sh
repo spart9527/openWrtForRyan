@@ -385,7 +385,7 @@ if [ -n "$missing" ]; then
 fi
 # packages.txt 里的顶层包也必须编进去。下面几个在 Kwrt 25.12 x86 上本来就编不了
 # （源里没有，或依赖 PWM_SUPPORT），之前的成功编译里也没有，只警告。
-not_on_x86=" luci-app-turboacc luci-app-adbyby-plus luci-app-fan "
+not_on_x86=" luci-app-turboacc luci-app-fan "
 missing=""
 while IFS= read -r pkg || [ -n "$pkg" ]; do
   pkg="${pkg%%#*}"
