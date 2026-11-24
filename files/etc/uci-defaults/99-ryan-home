@@ -68,10 +68,10 @@ if [ "$WEB_SERVER" = uhttpd ] && [ -x /etc/init.d/nginx ] && [ -x /etc/init.d/uh
 	/etc/init.d/uhttpd enable
 fi
 
-# 升级可能保留 dnsmasq port=0（53 端口交给 SmartDNS/PassWall）。
-# 若这版固件没编这些包，把 53 还给 dnsmasq，避免全家 DNS 中断。
+# 升级可能保留 dnsmasq port=0（53 端口交给 PassWall）。
+# 若这版固件没编 PassWall / PassWall2，把 53 还给 dnsmasq，避免全家 DNS 中断。
 if [ "$(uci -q get dhcp.@dnsmasq[0].port)" = 0 ]; then
-	if [ ! -x /etc/init.d/smartdns ] && [ ! -x /etc/init.d/passwall ] && [ ! -x /etc/init.d/passwall2 ]; then
+	if [ ! -x /etc/init.d/passwall ] && [ ! -x /etc/init.d/passwall2 ]; then
 		uci -q delete dhcp.@dnsmasq[0].port
 		uci commit dhcp
 	fi

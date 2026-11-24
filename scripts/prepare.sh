@@ -362,7 +362,7 @@ for p in $(grep -E '^CONFIG_PACKAGE_' build-options.config | sed 's/^CONFIG_PACK
 done
 
 # 必须编进去的包：少一个就不出固件，免得刷完没有后台或少了在用的功能
-must_have="luci-base luci-app-firewall luci-mod-network luci-mod-status luci-mod-system luci-app-openvpn-server-client luci-app-upnp"
+must_have="luci-base luci-app-firewall luci-mod-network luci-mod-status luci-mod-system luci-app-openvpn-server-client luci-app-upnp irqbalance luci-app-irqbalance"
 if [ "$WEB_SERVER" = uhttpd ]; then
   must_have="$must_have luci luci-light luci-mod-admin-full uhttpd"
 else
@@ -370,7 +370,7 @@ else
 fi
 case "$INTERNET" in
   none) ;;
-  *) must_have="$must_have luci-app-${INTERNET} smartdns luci-app-smartdns" ;;
+  *) must_have="$must_have luci-app-${INTERNET}" ;;
 esac
 missing=""
 for p in $must_have; do
