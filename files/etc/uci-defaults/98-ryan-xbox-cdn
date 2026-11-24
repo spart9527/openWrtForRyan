@@ -31,4 +31,19 @@ uci -q set dhcp.ryan_xbox_srvs.class='0'
 uci -q set dhcp.ryan_xbox_srvs.weight='1000'
 
 uci commit dhcp
+
+# 启用开机脚本，并加每分钟 cron：PassWall 重写 11400 临时配置后自动把规则补回去。
+if [ -x /etc/init.d/ryan-xbox-cdn ]; then
+	/etc/init.d/ryan-xbox-cdn enable
+fi
+mkdir -p /etc/crontabs
+touch /etc/crontabs/root
+if ! grep -q '/etc/init.d/ryan-xbox-cdn' /etc/crontabs/root 2>/dev/null; then
+	echo '* * * * * /etc/init.d/ryan-xbox-cdn start' >> /etc/crontabs/root
+fi
+if [ -x /etc/init.d/cron ]; then
+	/etc/init.d/cron enable
+	/etc/init.d/cron restart 2>/dev/null || true
+fi
+
 exit 0
