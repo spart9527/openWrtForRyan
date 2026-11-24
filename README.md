@@ -46,7 +46,7 @@
 
 这台机器不用 WireGuard，也不要把 `luci-proto-wireguard`、`wireguard-tools` 加进固件：自编内核匹配不到现成的 `kmod-wireguard`。
 
-`/root/` 已加入升级保留列表，用来存备份、证书等。Xbox 国内 CDN：镜像含 `/etc/nginx/conf.d/xbox-cn.conf`（302 跳到 assets1/dlassets.xboxlive.cn），升级也会保留已有文件；dnsmasq 把下载域名指到本机 LAN IP（默认 192.168.1.1，随 `LAN_IP` 编译选项），并把 `assets-srvs-net.trafficmanager.net` 的 SRV 转到 `assets1.xboxlive.com:80`，避免下载中途掉回海外 CDN。不要把 .com CNAME 到 .cn（会 403）。本版不再预装 SmartDNS，也不再保留 `/etc/smartdns/`（旧的自定义规则和去广告列表升级后会清掉）。不预装 `luci-app-adbyby-plus`，也不打开 PassWall 去广告。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
+`/root/` 已加入升级保留列表，用来存备份、证书等。Xbox 国内 CDN：镜像含 `/etc/nginx/conf.d/xbox-cn.conf`（302 跳到 assets1/dlassets.xboxlive.cn），升级也会保留已有文件。主 dnsmasq（口 53，含 Xbox 网卡「直连」例外）把下载域名指到本机 LAN IP（默认 192.168.1.1，随 `LAN_IP` 编译选项），并把 `assets-srvs-net.trafficmanager.net` 的 SRV 转到 `assets1.xboxlive.com:80`。PassWall 会把其余 53 端口查询（含本机）转到 11400 的临时 dnsmasq，`ryan-xbox-cdn` 会把同样的 `address=`、SRV 和 `filter-AAAA` 写入这份配置并重新拉起进程（只 HUP 不够）；开机执行，之后每分钟检查一次，PassWall 重写配置后不必再手工补。不要把 .com CNAME 到 .cn（会 403）。本版不再预装 SmartDNS，也不再保留 `/etc/smartdns/`（旧的自定义规则和去广告列表升级后会清掉）。不预装 `luci-app-adbyby-plus`，也不打开 PassWall 去广告。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
 
 ## GitHub 上编译
 
@@ -85,7 +85,7 @@ firmware-upgrade
 - 关闭 `zram`、`ram_release`、`parentcontrol` 自启（8GB 内存不需要压缩交换和定时清缓存；家长控制没在用，要用时在 LuCI 里勾选开启）
 - 若还没有 irqbalance 配置，则默认启用（镜像里已是启用；已有配置不覆盖，可在 LuCI 里关闭）
 - 本版未编入 SmartDNS 时，清掉升级留下的 `/etc/config/smartdns*` 和 `/etc/smartdns/`（不去动 PassWall 自带的 SmartDNS 辅助脚本）
-- 写入 Xbox CDN 的 dnsmasq 主机名和 SRV（见 `98-ryan-xbox-cdn`）；若存在 `xbox-cn.conf`，选 uhttpd 时也不停 nginx
+- 写入 Xbox CDN 的主 dnsmasq 主机名和 SRV（见 `98-ryan-xbox-cdn`），并启用 `ryan-xbox-cdn`（开机 + 每分钟 cron）把同样规则补进 PassWall 的 11400 临时配置；若存在 `xbox-cn.conf`，选 uhttpd 时也不停 nginx
 - 防火墙只开软件流量卸载：`flow_offloading=1`、`flow_offloading_hw=0`（igc / i226 网卡不支持硬件卸载）
 - 删除已卸载插件残留的防火墙 include：`dockerd`、`adbyby`、`shadowsocksr`、`passwall2`、`passwall2_server`、`unblockmusic`
 
@@ -103,7 +103,7 @@ firmware-upgrade
 - `uci get dhcp.@dnsmasq[0].port` 为 `0`（PassWall 接管 53 之后）
 - `uci get irqbalance.irqbalance.enabled` 为 `1`；`/etc/init.d/irqbalance enabled && echo on` 输出 `on`
 - `uci get dhcp.@dnsmasq[0].address` 含 `/assets1.xboxlive.com/<LAN_IP>`；`uci get dhcp.ryan_xbox_srvs.target` 为 `assets1.xboxlive.com`
-- `test -f /etc/nginx/conf.d/xbox-cn.conf && echo ok` 输出 `ok`。本机若已安装 nginx：`nslookup assets1.xboxlive.com 127.0.0.1` 应返回 LAN IP
+- `test -f /etc/nginx/conf.d/xbox-cn.conf && echo ok` 输出 `ok`。`nslookup assets1.xboxlive.com 127.0.0.1` 应直接返回 LAN IP（走 PassWall 11400 时也一样，且不应再出现官方 AAAA/IP）；`/etc/init.d/ryan-xbox-cdn enabled && echo on` 输出 `on`
 - `nslookup baidu.com 127.0.0.1` 正常
 - `opkg update` 不再报 core 源 404
 - `/etc/init.d/zram enabled || echo off` 输出 `off`；`uci get firewall.@defaults[0].flow_offloading_hw` 为 `0`
