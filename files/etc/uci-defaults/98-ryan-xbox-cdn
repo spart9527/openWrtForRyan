@@ -1,0 +1,34 @@
+#!/bin/sh
+# Xbox 国内 CDN：把下载域名指到本机 LAN IP，让已有的 nginx 302（xbox-cn.conf）生效。
+# 不要把 .com CNAME 到 .cn，那样会 403 / 0x80190193。
+# 主机列表来自 XboxDownload OpenWrt Nginx 方案及 2026-11-11 增补的 SRV 相关域名。
+# SRV 来自同一方案在 dnsmasq 里的转发（assets-srvs-net.trafficmanager.net -> assets1.xboxlive.com:80）。
+
+LAN_IP=192.168.1.1
+[ -f /etc/ryan-build.conf ] && . /etc/ryan-build.conf
+LAN_IP="${LAN_IP:-192.168.1.1}"
+
+HOSTS="assets1.xboxlive.com assets2.xboxlive.com d1.xboxlive.com d2.xboxlive.com xvcf1.xboxlive.com xvcf2.xboxlive.com dlassets.xboxlive.com dlassets2.xboxlive.com 5.xb.delivery.microsoft.com assets1.xboxlive.com.edgesuite.net cl-glcb907925.gcdn.co fg.microsoft.map.fastly.net"
+
+# 去掉本脚本以前写入的同名 address，再按当前 LAN IP 写回去
+for a in $(uci -q get dhcp.@dnsmasq[0].address 2>/dev/null); do
+	for h in $HOSTS; do
+		case "$a" in
+			/$h/*) uci -q del_list dhcp.@dnsmasq[0].address="$a" ;;
+		esac
+	done
+done
+for h in $HOSTS; do
+	uci add_list dhcp.@dnsmasq[0].address="/$h/$LAN_IP"
+done
+
+# 具名 section，升级时可重复执行
+uci -q set dhcp.ryan_xbox_srvs=srvhost
+uci -q set dhcp.ryan_xbox_srvs.srv='assets-srvs-net.trafficmanager.net'
+uci -q set dhcp.ryan_xbox_srvs.target='assets1.xboxlive.com'
+uci -q set dhcp.ryan_xbox_srvs.port='80'
+uci -q set dhcp.ryan_xbox_srvs.class='0'
+uci -q set dhcp.ryan_xbox_srvs.weight='1000'
+
+uci commit dhcp
+exit 0
