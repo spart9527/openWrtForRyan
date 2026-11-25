@@ -260,6 +260,9 @@ if ! grep -qE '^[[:space:]]*CPU_CFLAGS = -O2 -pipe[[:space:]]*$' include/target.
   exit 1
 fi
 
+echo "==> attach sysupgrade metadata on x86 combined images with an empty device list"
+/bin/bash "$ROOT/scripts/attach-image-metadata.sh"
+
 echo "==> make defconfig"
 make defconfig
 
