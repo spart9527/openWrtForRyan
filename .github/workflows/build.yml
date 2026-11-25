@@ -374,6 +374,21 @@ jobs:
           } >> "$GITHUB_ENV"
           ls -lh out
           test -n "$(ls -A out/$imgpat 2>/dev/null)"
+          fwtool=openwrt/staging_dir/host/bin/fwtool
+          if [ ! -x "$fwtool" ]; then
+            echo "ERROR: host fwtool missing; cannot verify image metadata" >&2
+            exit 1
+          fi
+          meta=$(mktemp)
+          imgfile=$(ls out/$imgpat)
+          if ! "$fwtool" -i "$meta" "$imgfile"; then
+            echo "ERROR: Image metadata not present on $imgfile" >&2
+            exit 1
+          fi
+          echo "Image metadata:"
+          cat "$meta"
+          python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert m.get("metadata_version"), m; assert "version" in m, m' "$meta"
+          rm -f "$meta"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

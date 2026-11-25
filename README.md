@@ -74,6 +74,8 @@ firmware-upgrade
 
 旧固件里的 `firmware-upgrade` 还没有这些检查。第一次请在 LuCI 里上传 Release 的镜像并勾选保留配置，或先把仓库里的 `scripts/router-upgrade.sh` 拷到路由的 `/usr/sbin/firmware-upgrade` 再跑 `--check`。有人在家、能接显示器或笔记本时再刷。
 
+镜像会附带 sysupgrade metadata，LuCI 网页升级不应再出现 “Image metadata not present”。x86 通用包不把特定 DMI `board_name` 写进 `supported_devices`，以免校验误拒；现机侧允许空的设备列表。从还没有这一改动的版本（例如 `2026.11.25-28-x86_64`）刷入第一份带 metadata 的镜像时，现机校验还不认识空列表，LuCI 可能提示校验失败，需勾选“强制刷写”并保留配置；命令行则用 `FORCE=1 firmware-upgrade` 或 `sysupgrade -F -v`。刷入之后，再升级就不需要强制。
+
 不要在现机上对 `kmod-*` 做 `opkg upgrade`。内核只通过刷整包固件更新。
 
 网络起不来时：无配置再刷一次，只手工恢复 `network` / `firewall` / `dhcp` / `dropbear`，需要的话从备份取出 OpenVPN 证书。
