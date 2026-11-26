@@ -402,11 +402,19 @@ jobs:
         run: echo "STAMP=$(TZ=Asia/Shanghai date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       - name: Publish release
+        id: publish
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.STAMP }}-x86_64
           name: Ryan-OpenWrt ${{ env.STAMP }} x86_64
-          files: out/*
+          # 小文件先传、镜像最后，避免并行上传大文件时进程中途退出、草稿无法 finalize。
+          preserve_order: true
+          files: |
+            out/ryan-build.conf
+            out/config.build
+            out/sha256sums
+            out/*ext4-combined-efi.img.gz
           body: |
             基于 kiddin9/Kwrt `25.12` + OpenWrt `openwrt-25.12`。
             刷机文件：按本次选项生成的 `*-combined-efi.img.gz`（EFI，文件系统见下面的 FILESYSTEM）。
@@ -419,3 +427,94 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # softprops/action-gh-release 会先建 draft，全部资产上传成功后再 publish。
+      # 构建 #29 在并行上传约 160MiB 镜像时进程无错误日志退出，草稿只留下小文件。
+      # 这一步补传缺失资产并发布，成功则整次构建仍记为成功。
+      - name: Ensure release published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.STAMP }}-x86_64
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(out/ryan-build.conf out/config.build out/sha256sums out/*ext4-combined-efi.img.gz)
+          if [ "${#assets[@]}" -lt 4 ]; then
+            echo "ERROR: expected at least 4 release files in out/, got: ${assets[*]:-none}" >&2
+            ls -lh out || true
+            exit 1
+          fi
+
+          upload_one() {
+            local f="$1" attempt
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "$TAG" "$f" --clobber -R "$GITHUB_REPOSITORY"; then
+                return 0
+              fi
+              echo "WARN: upload $f failed (attempt $attempt), retrying..." >&2
+              sleep $((attempt * 10))
+            done
+            echo "ERROR: failed to upload $f after retries" >&2
+            return 1
+          }
+
+          if ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "No release/draft for $TAG; creating draft"
+            notes=$(mktemp)
+            {
+              echo "基于 kiddin9/Kwrt \`25.12\` + OpenWrt \`openwrt-25.12\`。"
+              echo "刷机文件：按本次选项生成的 \`*-combined-efi.img.gz\`（EFI，文件系统见下面的 FILESYSTEM）。"
+              echo
+              echo "编译选项："
+              echo "$BUILD_OPTS"
+              echo
+              echo "- SSH: 端口见现机配置，公网由防火墙挡住"
+              echo "- 包清单：\`packages.txt\`"
+            } > "$notes"
+            gh release create "$TAG" --draft --title "Ryan-OpenWrt ${STAMP} x86_64" \
+              --notes-file "$notes" --target "$GITHUB_SHA" -R "$GITHUB_REPOSITORY"
+            rm -f "$notes"
+          fi
+
+          missing=0
+          existing=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          for f in "${assets[@]}"; do
+            base=$(basename "$f")
+            if ! grep -Fxq "$base" <<<"$existing"; then
+              echo "Missing asset $base"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -eq 1 ] || [ "${{ steps.publish.outcome }}" != "success" ]; then
+            echo "Uploading/repairing release assets for $TAG"
+            for f in "${assets[@]}"; do
+              upload_one "$f"
+            done
+          else
+            echo "softprops publish succeeded; assets already present"
+          fi
+
+          draft=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$draft" = "true" ]; then
+            echo "Publishing draft $TAG"
+            gh release edit "$TAG" --draft=false --latest --target "$GITHUB_SHA" -R "$GITHUB_REPOSITORY"
+          fi
+
+          echo "Final release assets:"
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft,url,assets \
+            --jq '{url,isDraft,assets:[.assets[]|{name,size}]}'
+          still_draft=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          names=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          if [ "$still_draft" = "true" ]; then
+            echo "ERROR: release $TAG is still a draft" >&2
+            exit 1
+          fi
+          for f in "${assets[@]}"; do
+            base=$(basename "$f")
+            if ! grep -Fxq "$base" <<<"$names"; then
+              echo "ERROR: asset $base still missing from $TAG" >&2
+              exit 1
+            fi
+          done
+          echo "Release $TAG is published with all expected assets"
