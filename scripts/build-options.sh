@@ -141,7 +141,10 @@ apply_text devices/common/diy/package/base-files/files/etc/banner
     echo "CONFIG_PACKAGE_luci=y"
     echo "CONFIG_PACKAGE_uhttpd=y"
     echo "CONFIG_PACKAGE_uhttpd-mod-ubus=y"
+    # nginx-ssl 只做 Xbox 302 和 HTTP 反代，不替换 LuCI
+    echo "CONFIG_PACKAGE_nginx-ssl=y"
     echo "# CONFIG_PACKAGE_luci-nginx is not set"
+    echo "# CONFIG_PACKAGE_nginx-mod-luci is not set"
   else
     echo "CONFIG_PACKAGE_luci-nginx=y"
     echo "# CONFIG_PACKAGE_luci is not set"

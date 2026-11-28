@@ -14,7 +14,7 @@ on:
         required: true
         default: "Ryan-OpenWrt"
       web_server:
-        description: "LuCI 后台用的 Web 服务器。uhttpd 是 OpenWrt 传统方案，访问 http://后台地址/ 即可登录（推荐）。nginx 是 Kwrt 默认，但根路径可能出现 403。"
+        description: "LuCI 后台用的 Web 服务器。请保持 uhttpd（推荐）：访问 http://后台地址/ 即可登录。镜像另外编入 nginx-ssl，只做 Xbox 国内 CDN 跳转和把 HTTP 后台反代到 uhttpd，不必把这项改成 nginx。若选 nginx，则用 Kwrt 的 luci-nginx 当后台，根路径可能出现 403。"
         type: choice
         options: [uhttpd, nginx]
         default: uhttpd

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Xbox 国内 CDN：把下载域名指到本机 LAN IP，让已有的 nginx 302（xbox-cn.conf）生效。
+# Xbox 国内 CDN：把下载域名指到本机 LAN IP，让镜像里的 nginx-ssl 按 xbox-cn.conf 做 302 跳转（80 由 nginx 监听，LuCI 仍走 uhttpd）。
 # 不要把 .com CNAME 到 .cn，那样会 403 / 0x80190193。
 # 主机列表来自 XboxDownload OpenWrt Nginx 方案及 2026-11-11 增补的 SRV 相关域名。
 # SRV 来自同一方案在 dnsmasq 里的转发（assets-srvs-net.trafficmanager.net -> assets1.xboxlive.com:80）。

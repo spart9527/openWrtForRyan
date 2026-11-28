@@ -61,14 +61,32 @@ case "$WAN_PROTO" in
 esac
 uci commit network
 
-# Web 服务器：选 uhttpd 时，若有包把 nginx 带进来，停掉它，免得抢 80/443。
-# 但 Xbox 国内 CDN 的 302 依赖 nginx 监听 80（/etc/nginx/conf.d/xbox-cn.conf），这时不要停 nginx。
-if [ "$WEB_SERVER" = uhttpd ] && [ -x /etc/init.d/nginx ] && [ -x /etc/init.d/uhttpd ]; then
-	if [ -f /etc/nginx/conf.d/xbox-cn.conf ]; then
+# Web 服务器：LuCI 仍用 uhttpd。镜像同时带 nginx-ssl，用于 Xbox CDN 302，
+# 并把 HTTP 后台反代到 127.0.0.1:8080。443 仍由 uhttpd 提供 HTTPS。
+# 不要停 nginx，也不要把 LuCI 换成 luci-nginx。
+if [ "$WEB_SERVER" = uhttpd ] && [ -x /etc/init.d/uhttpd ]; then
+	if [ -x /etc/init.d/nginx ] && [ -f /etc/nginx/conf.d/xbox-cn.conf ]; then
+		uci -q delete uhttpd.main.listen_http
+		uci add_list uhttpd.main.listen_http='127.0.0.1:8080'
+		if [ -z "$(uci -q get uhttpd.main.listen_https)" ]; then
+			uci add_list uhttpd.main.listen_https='0.0.0.0:443'
+			uci add_list uhttpd.main.listen_https='[::]:443'
+		fi
+		uci commit uhttpd
+		if uci -q get nginx.global >/dev/null; then
+			uci set nginx.global.uci_enable='false'
+			uci commit nginx
+		fi
 		/etc/init.d/uhttpd enable
-	else
+		/etc/init.d/nginx enable
+		# 先让出 80，再启动 nginx，避免抢端口
+		/etc/init.d/uhttpd restart 2>/dev/null || true
+		/etc/init.d/nginx restart 2>/dev/null || true
+	elif [ -x /etc/init.d/nginx ]; then
 		/etc/init.d/nginx disable
 		/etc/init.d/nginx stop 2>/dev/null
+		/etc/init.d/uhttpd enable
+	else
 		/etc/init.d/uhttpd enable
 	fi
 fi

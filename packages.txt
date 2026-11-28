@@ -37,6 +37,9 @@ btrfs-progs
 smartmontools
 parted
 
+# --- Xbox CDN 跳转（LuCI 仍用 uhttpd，不要换成 luci-nginx）---
+nginx-ssl
+
 # --- 界面 / 系统 ---
 luci-theme-argon
 luci-app-ttyd
