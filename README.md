@@ -9,7 +9,7 @@
 - 分区：内核 16 MiB，根分区 1004 MiB（不要再改）
 - LAN：`192.168.1.1`（可在编译选项里改）
 - SSH：Dropbear 不绑定接口。LAN 没起来时绑定会让 SSH 起不来；公网由防火墙 `wan` input=REJECT 挡住
-- Web：默认 uhttpd。Kwrt 默认的 luci-nginx 会让根路径 403
+- Web：默认 uhttpd 作为 LuCI 后台。镜像同时编入 `nginx-ssl`，用于 Xbox 国内 CDN 的 302 跳转，并把 `http://192.168.1.1/` 反代到本机 `127.0.0.1:8080` 的 uhttpd；HTTPS 443 仍由 uhttpd 提供。不要把编译选项改成用 nginx 当后台（Kwrt 的 luci-nginx 会让根路径 403）
 - 网口：默认 `eth0` 做 WAN，其余所有 eth 口做 LAN。多于 2 张网卡时不要把网口交给 Kwrt 分配（它会把 eth1 当 WAN）
 - 拨号：默认 `keep`，升级保留现有 WAN 设置。PPPoE 账号密码不进固件，也不要写进 `build.conf`
 - 主机名：`Ryan-OpenWrt`
@@ -27,7 +27,7 @@
 |---|---|---|
 | `LAN_IP` | `192.168.1.1` | 后台地址。刷机后写入，并覆盖你在后台改过的 LAN IP |
 | `HOSTNAME` | `Ryan-OpenWrt` | 主机名。刷机后写入，并覆盖你在后台改过的主机名 |
-| `WEB_SERVER` | `uhttpd` | `uhttpd`（推荐）或 `nginx`（根路径可能 403） |
+| `WEB_SERVER` | `uhttpd` | LuCI 后台。请保持 `uhttpd`（推荐）。Xbox 跳转另编 `nginx-ssl`，不必改成 `nginx`；选 `nginx` 会用 luci-nginx 当后台，根路径可能 403 |
 | `WAN_PORT` | `eth0` | `eth0`–`eth3`，或 `auto`（不建议） |
 | `LAN_PORTS` | `auto` | 除 WAN 以外的所有 eth 口；也可写成 `eth1 eth2` |
 | `WAN_PROTO` | `keep` | `keep` / `pppoe` / `dhcp`。`pppoe` 只改协议，账号沿用现机 |
@@ -46,7 +46,7 @@
 
 这台机器不用 WireGuard，也不要把 `luci-proto-wireguard`、`wireguard-tools` 加进固件：自编内核匹配不到现成的 `kmod-wireguard`。
 
-`/root/` 已加入升级保留列表，用来存备份、证书等。Xbox 国内 CDN：镜像含 `/etc/nginx/conf.d/xbox-cn.conf`（302 跳到 assets1/dlassets.xboxlive.cn），升级也会保留已有文件。主 dnsmasq（口 53，含 Xbox 网卡「直连」例外）把下载域名指到本机 LAN IP（默认 192.168.1.1，随 `LAN_IP` 编译选项），并把 `assets-srvs-net.trafficmanager.net` 的 SRV 转到 `assets1.xboxlive.com:80`。PassWall 会把其余 53 端口查询（含本机）转到 11400 的临时 dnsmasq，`ryan-xbox-cdn` 会把同样的 `address=`、SRV 和 `filter-AAAA` 写入这份配置并重新拉起进程（只 HUP 不够）；开机执行，之后每分钟检查一次，PassWall 重写配置后不必再手工补。不要把 .com CNAME 到 .cn（会 403）。本版不再预装 SmartDNS，也不再保留 `/etc/smartdns/`（旧的自定义规则和去广告列表升级后会清掉）。不预装 `luci-app-adbyby-plus`，也不打开 PassWall 去广告。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
+`/root/` 已加入升级保留列表，用来存备份、证书等。Xbox 国内 CDN：镜像含 `nginx-ssl`、`/etc/nginx/nginx.conf`、`/etc/nginx/conf.d/xbox-cn.conf`（对 Xbox CDN 主机 302 到 assets1/dlassets.xboxlive.cn）和 `/etc/nginx/conf.d/luci-proxy.conf`（其他 HTTP 请求反代到 `127.0.0.1:8080` 的 uhttpd）。nginx 独占 80，不监听 443；uhttpd 的 HTTP 只监听 `127.0.0.1:8080`，HTTPS 仍走 443。`nginx.global.uci_enable` 为 false，避免旧 UCI 里的 `_lan` / `_sc_pw` 抢端口。升级会保留这些 nginx 配置以及 `/etc/config` 里的 uhttpd 监听设置。主 dnsmasq（口 53，含 Xbox 网卡「直连」例外）把下载域名指到本机 LAN IP（默认 192.168.1.1，随 `LAN_IP` 编译选项），并把 `assets-srvs-net.trafficmanager.net` 的 SRV 转到 `assets1.xboxlive.com:80`。PassWall 会把其余 53 端口查询（含本机）转到 11400 的临时 dnsmasq，`ryan-xbox-cdn` 会把同样的 `address=`、SRV 和 `filter-AAAA` 写入这份配置并重新拉起进程（只 HUP 不够）；开机执行，之后每分钟检查一次，PassWall 重写配置后不必再手工补。不要把 .com CNAME 到 .cn（会 403）。本版不再预装 SmartDNS，也不再保留 `/etc/smartdns/`（旧的自定义规则和去广告列表升级后会清掉）。不预装 `luci-app-adbyby-plus`，也不打开 PassWall 去广告。内核和 x86 网卡驱动跟 Kwrt 走，不必手写 `kmod-*`。
 
 ## GitHub 上编译
 
@@ -87,7 +87,7 @@ firmware-upgrade
 - 关闭 `zram`、`ram_release`、`parentcontrol` 自启（8GB 内存不需要压缩交换和定时清缓存；家长控制没在用，要用时在 LuCI 里勾选开启）
 - 若还没有 irqbalance 配置，则默认启用（镜像里已是启用；已有配置不覆盖，可在 LuCI 里关闭）
 - 本版未编入 SmartDNS 时，清掉升级留下的 `/etc/config/smartdns*` 和 `/etc/smartdns/`（不去动 PassWall 自带的 SmartDNS 辅助脚本）
-- 写入 Xbox CDN 的主 dnsmasq 主机名和 SRV（见 `98-ryan-xbox-cdn`），并启用 `ryan-xbox-cdn`（开机 + 每分钟 cron）把同样规则补进 PassWall 的 11400 临时配置；若存在 `xbox-cn.conf`，选 uhttpd 时也不停 nginx
+- 写入 Xbox CDN 的主 dnsmasq 主机名和 SRV（见 `98-ryan-xbox-cdn`），并启用 `ryan-xbox-cdn`（开机 + 每分钟 cron）把同样规则补进 PassWall 的 11400 临时配置；选 uhttpd 时启用 nginx 与 uhttpd，把 uhttpd 的 HTTP 改到 `127.0.0.1:8080`，并关闭 nginx UCI 托管，避免和 LuCI 抢 80/443
 - 防火墙只开软件流量卸载：`flow_offloading=1`、`flow_offloading_hw=0`（igc / i226 网卡不支持硬件卸载）
 - 删除已卸载插件残留的防火墙 include：`dockerd`、`adbyby`、`shadowsocksr`、`passwall2`、`passwall2_server`、`unblockmusic`
 
@@ -105,7 +105,12 @@ firmware-upgrade
 - `uci get dhcp.@dnsmasq[0].port` 为 `0`（PassWall 接管 53 之后）
 - `uci get irqbalance.irqbalance.enabled` 为 `1`；`/etc/init.d/irqbalance enabled && echo on` 输出 `on`
 - `uci get dhcp.@dnsmasq[0].address` 含 `/assets1.xboxlive.com/<LAN_IP>`；`uci get dhcp.ryan_xbox_srvs.target` 为 `assets1.xboxlive.com`
-- `test -f /etc/nginx/conf.d/xbox-cn.conf && echo ok` 输出 `ok`。`nslookup assets1.xboxlive.com 127.0.0.1` 应直接返回 LAN IP（走 PassWall 11400 时也一样，且不应再出现官方 AAAA/IP）；`/etc/init.d/ryan-xbox-cdn enabled && echo on` 输出 `on`
+- `opkg status nginx-ssl` 显示已安装；`test -f /etc/nginx/nginx.conf && test -f /etc/nginx/conf.d/xbox-cn.conf && test -f /etc/nginx/conf.d/luci-proxy.conf && echo ok` 输出 `ok`
+- `uci get uhttpd.main.listen_http` 为 `127.0.0.1:8080`；`uci get uhttpd.main.listen_https` 仍含 443；`uci get nginx.global.uci_enable` 为 `false`
+- `/etc/init.d/nginx enabled && echo on` 与 `/etc/init.d/uhttpd enabled && echo on` 都输出 `on`
+- `curl -sI -H 'Host: assets1.xboxlive.com' http://192.168.1.1/testpath/file.bin` 为 302，且 Location 指向 `http://assets1.xboxlive.cn/testpath/file.bin`；`dlassets.xboxlive.com` 同理，跳到 `http://dlassets.xboxlive.cn/...`
+- `curl -sI http://192.168.1.1/` 仍是 LuCI（例如 403 且带 `x-luci-login-required`），不是 nginx 默认页；`curl -skI https://192.168.1.1/` 同样能打开 LuCI
+- `nslookup assets1.xboxlive.com 127.0.0.1` 应直接返回 LAN IP（走 PassWall 11400 时也一样，且不应再出现官方 AAAA/IP）；`/etc/init.d/ryan-xbox-cdn enabled && echo on` 输出 `on`
 - `nslookup baidu.com 127.0.0.1` 正常
 - `opkg update` 不再报 core 源 404
 - `/etc/init.d/zram enabled || echo off` 输出 `off`；`uci get firewall.@defaults[0].flow_offloading_hw` 为 `0`
